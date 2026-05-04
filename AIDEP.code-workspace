@@ -1,0 +1,13 @@
+{
+  "folders": [
+    { "name": "🖥️  Frontend",  "path": "frontend" },
+    { "name": "⚙️  Backend",   "path": "backend"  },
+    { "name": "📱  Mobile",    "path": "mobile"   },
+    { "name": "🏠  Root",      "path": "."        }
+  ],
+  "settings": {
+    "typescript.tsdk": "frontend/node_modules/typescript/lib",
+    "typescript.enablePromptUseWorkspaceTsdk": true,
+    "editor.formatOnSave": true
+  }
+}
