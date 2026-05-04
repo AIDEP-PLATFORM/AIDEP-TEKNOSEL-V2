@@ -80,12 +80,11 @@ function Sidebar() {
       w="220px"
       bgGradient="linear(160deg, #13103a 0%, #0d0f1e 55%, #0c1128 100%)"
       borderRight="1px solid rgba(255,255,255,0.07)"
-      position="relative"
+      position="sticky"
+      top={0}
       overflow="hidden"
       py={5}
       px={3}
-      position="sticky"
-      top={0}
       flexShrink={0}
       initial={{ x: -220, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}

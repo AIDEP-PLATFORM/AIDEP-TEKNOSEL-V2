@@ -5,7 +5,9 @@ import DashboardPage from '@/pages/dashboard/DashboardPage'
 import ProtectedRoute from '@/components/common/ProtectedRoute'
 import MainLayout from '@/components/layout/MainLayout'
 
-// Placeholder sayfalar
+import RequestsPage   from '@/pages/requests/RequestsPage'
+import VolunteersPage from '@/pages/volunteers/VolunteersPage'
+import MapPage        from '@/pages/map/MapPage'
 import PlaceholderPage from '@/pages/PlaceholderPage'
 
 function App() {
@@ -23,9 +25,9 @@ function App() {
             <MainLayout>
               <Routes>
                 <Route path="/dashboard"  element={<DashboardPage />} />
-                <Route path="/requests"   element={<PlaceholderPage title="Talepler" icon="🆘" />} />
-                <Route path="/volunteers" element={<PlaceholderPage title="Gönüllüler" icon="👥" />} />
-                <Route path="/map"        element={<PlaceholderPage title="Harita" icon="🗺️" />} />
+                <Route path="/requests"   element={<RequestsPage />} />
+                <Route path="/volunteers" element={<VolunteersPage />} />
+                <Route path="/map"        element={<MapPage />} />
                 <Route path="/resources"  element={<PlaceholderPage title="Kaynaklar" icon="📦" />} />
                 <Route path="*"           element={<Navigate to="/dashboard" replace />} />
               </Routes>
