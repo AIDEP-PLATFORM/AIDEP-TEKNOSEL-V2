@@ -7,11 +7,30 @@ class Settings(BaseSettings):
     VERSION: str = "0.1.0"
 
     # Database
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_DB: str
+    POSTGRES_PORT: int = 5433
     DATABASE_URL: str
     DATABASE_URL_ASYNC: str
 
-    # Firebase
-    FIREBASE_CREDENTIALS_PATH: str
+    # Redis
+    REDIS_PORT: int = 6380
+    REDIS_URL: str = "redis://localhost:6380/0"
+
+    # MinIO
+    MINIO_PORT: int = 9002
+    MINIO_CONSOLE_PORT: int = 9003
+    MINIO_ROOT_USER: str
+    MINIO_ROOT_PASSWORD: str
+    MINIO_URL: str = "http://localhost:9002"
+    MINIO_BUCKET_DATASETS: str = "ai-datasets"
+
+    # AWS S3
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_S3_BUCKET: str = ""
+    AWS_S3_REGION: str = ""
 
     # External APIs
     AFAD_API_URL: str = "https://deprem.afad.gov.tr/apiv2/event/filter"
@@ -19,18 +38,18 @@ class Settings(BaseSettings):
     MGM_API_URL: str = "https://servis.mgm.gov.tr/web"
 
     # OSRM
-    OSRM_URL: str = "http://router.project-osrm.org"
+    OSRM_URL: str = "http://osrm:5000"
 
     # Auth
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 1 gün
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
 
     # CORS
     ALLOWED_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
 
     class Config:
-        env_file = ".env"
+        env_file = "../.env"
         case_sensitive = True
 
 
