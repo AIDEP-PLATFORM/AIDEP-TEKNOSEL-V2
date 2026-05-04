@@ -1,9 +1,9 @@
 import { View, Text } from 'react-native';
 
-export default function ReportScreen() {
+export default function TasksScreen() {
   return (
     <View>
-      <Text>Hasar Bildir</Text>
+      <Text>Görevler</Text>
     </View>
   );
 }

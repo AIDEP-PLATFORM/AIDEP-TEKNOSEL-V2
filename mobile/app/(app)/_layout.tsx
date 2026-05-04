@@ -1,10 +1,12 @@
 import { Redirect, Stack } from 'expo-router';
+import { useAuthStore } from '@/store/auth.store';
+import { LoadingScreen } from '@/components/common/loading-screen';
 
-// MB-004: Rol bazlı yönlendirme burada implement edilecek
 export default function AppLayout() {
-  // TODO: Auth kontrolü eklenecek - giriş yapılmamışsa login'e yönlendir
-  // const { user } = useAuthStore();
-  // if (!user) return <Redirect href="/(auth)/login" />;
+  const { user, isLoading } = useAuthStore();
+
+  if (isLoading) return <LoadingScreen />;
+  if (!user) return <Redirect href="/(auth)/login" />;
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
