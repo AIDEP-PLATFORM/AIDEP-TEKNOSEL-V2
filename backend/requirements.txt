@@ -18,8 +18,12 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.20
 
-# Firebase
-firebase-admin==6.7.0
+# Cache
+redis==5.2.1
+
+# Object Storage
+miniopy-async==1.21.1
+aioboto3==13.3.0
 
 # HTTP Client
 httpx==0.28.1
@@ -33,4 +37,3 @@ pillow==11.2.1
 # Testing
 pytest==8.3.5
 pytest-asyncio==0.26.0
-httpx==0.28.1
