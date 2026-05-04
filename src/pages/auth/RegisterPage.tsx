@@ -1,17 +1,6 @@
 import {
-  Box,
-  Button,
-  Flex,
-  FormControl,
-  FormLabel,
-  Heading,
-  Input,
-  Stack,
-  Text,
-  useToast,
-  IconButton,
-  Link,
-  Select,
+  Box, Button, Flex, FormControl, FormLabel,
+  Heading, Input, Stack, Text, useToast, IconButton, Link, Select,
 } from '@chakra-ui/react'
 import { motion } from 'framer-motion'
 import { useState } from 'react'
@@ -20,251 +9,155 @@ import { useNavigate, Link as RouterLink } from 'react-router-dom'
 const MotionBox = motion(Box)
 const MotionStack = motion(Stack)
 
+const itemVariants = {
+  hidden:  { opacity:0, y:20 },
+  visible: { opacity:1, y:0, transition:{ duration:0.4, ease:'easeOut' } },
+}
 const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.08, delayChildren: 0.15 },
-  },
+  hidden:  { opacity:0 },
+  visible: { opacity:1, transition:{ staggerChildren:0.08, delayChildren:0.15 } },
 }
 
-const itemVariants = {
-  hidden: { opacity: 0, y: 16 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' } },
+const EyeIcon = ({ open }: { open:boolean }) => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    {open
+      ? <><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></>
+      : <><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></>
+    }
+  </svg>
+)
+
+const inputStyle = {
+  bg: 'rgba(255,255,255,0.05)',
+  border: '1px solid rgba(255,255,255,0.1)',
+  _hover: { borderColor:'rgba(249,115,22,0.5)', bg:'rgba(255,255,255,0.07)' },
+  _focus: { borderColor:'#f97316', bg:'rgba(255,255,255,0.07)', boxShadow:'0 0 0 3px rgba(249,115,22,0.15)' },
+  color: 'white',
+  _placeholder: { color:'rgba(255,255,255,0.2)' },
+  borderRadius: 'xl',
+  h: 12,
+  fontSize: 'sm',
+}
+
+const labelStyle = {
+  fontSize: '10px',
+  fontWeight: '700',
+  color: 'rgba(255,255,255,0.4)',
+  letterSpacing: 'widest',
+  textTransform: 'uppercase' as const,
+  mb: 1.5,
 }
 
 function RegisterPage() {
-  const [fullName, setFullName] = useState('')
-  const [email, setEmail] = useState('')
-  const [organization, setOrganization] = useState('')
-  const [password, setPassword] = useState('')
-  const [passwordConfirm, setPasswordConfirm] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
+  const [fullName, setFullName]           = useState('')
+  const [email, setEmail]                 = useState('')
+  const [org, setOrg]                     = useState('')
+  const [password, setPassword]           = useState('')
+  const [confirm, setConfirm]             = useState('')
+  const [showPw, setShowPw]               = useState(false)
+  const [loading, setLoading]             = useState(false)
   const navigate = useNavigate()
-  const toast = useToast()
+  const toast    = useToast()
 
-  const handleRegister = async (e: React.FormEvent) => {
+  const handleRegister = (e: React.FormEvent) => {
     e.preventDefault()
-
-    if (password !== passwordConfirm) {
-      toast({
-        title: 'Şifreler eşleşmiyor',
-        description: 'Lütfen şifrenizi kontrol edin.',
-        status: 'error',
-        duration: 3000,
-        isClosable: true,
-        position: 'top',
-      })
+    if (password !== confirm) {
+      toast({ title:'Şifreler eşleşmiyor', status:'error', duration:3000, isClosable:true, position:'top' })
       return
     }
-
-    setIsLoading(true)
-    // TODO: Backend hazır olduğunda buraya gerçek API çağrısı gelecek
+    setLoading(true)
     setTimeout(() => {
-      toast({
-        title: 'Kayıt başarılı',
-        description: 'Hesabınız oluşturuldu. Giriş yapabilirsiniz.',
-        status: 'success',
-        duration: 3000,
-        isClosable: true,
-        position: 'top',
-      })
+      toast({ title:'Kayıt başarılı', description:'Giriş yapabilirsiniz.', status:'success', duration:3000, isClosable:true, position:'top' })
       navigate('/login')
-      setIsLoading(false)
+      setLoading(false)
     }, 800)
   }
 
   return (
-    <Flex
-      minH="100vh"
-      align="center"
-      justify="center"
-      position="relative"
-      overflow="hidden"
-      bg="#07080f"
-      py={8}
-    >
-      <Box
-        position="absolute"
-        inset={0}
-        zIndex={0}
-        bgGradient="linear(160deg, #0d0f1e 0%, #0a0c1a 50%, #080a14 100%)"
-      />
-      <MotionBox
-        position="absolute"
-        w="560px" h="560px"
-        borderRadius="full"
-        bg="#3730a3"
-        opacity={0.22}
-        top="-180px" right="-120px"
-        filter="blur(90px)"
-        zIndex={0}
-        animate={{ scale: [1, 1.12, 1], opacity: [0.22, 0.32, 0.22] }}
-        transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' } as any}
-      />
-      <MotionBox
-        position="absolute"
-        w="440px" h="440px"
-        borderRadius="full"
-        bg="#1e40af"
-        opacity={0.2}
-        bottom="-150px" left="-100px"
-        filter="blur(90px)"
-        zIndex={0}
-        animate={{ scale: [1, 1.12, 1], opacity: [0.2, 0.3, 0.2] }}
-        transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut', delay: 2 } as any}
-      />
-      <MotionBox
-        position="absolute"
-        w="320px" h="320px"
-        borderRadius="full"
-        bg="#6d28d9"
-        opacity={0.18}
-        top="40%" left="55%"
-        filter="blur(80px)"
-        zIndex={0}
-        animate={{ scale: [1, 1.1, 1], opacity: [0.18, 0.26, 0.18] }}
-        transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut', delay: 1 } as any}
-      />
+    <Flex minH="100vh" align="center" justify="center" bg="#08091a" position="relative" overflow="hidden" py={8}>
+
+      {/* Arka plan orb'lar — indigo/mor palette */}
+      <MotionBox position="absolute" w="700px" h="700px" borderRadius="full" bg="#2d1b69"
+        opacity={0.25} top="-200px" right="-150px" filter="blur(120px)" zIndex={0}
+        animate={{ scale:[1,1.1,1], opacity:[0.25,0.35,0.25] }}
+        transition={{ duration:14, repeat:Infinity, ease:'easeInOut' } as any}/>
+      <MotionBox position="absolute" w="500px" h="500px" borderRadius="full" bg="#4c1d95"
+        opacity={0.2} bottom="-150px" left="-80px" filter="blur(100px)" zIndex={0}
+        animate={{ scale:[1,1.12,1] }}
+        transition={{ duration:17, repeat:Infinity, ease:'easeInOut', delay:2 } as any}/>
+      <MotionBox position="absolute" w="350px" h="350px" borderRadius="full" bg="#1e3a8a"
+        opacity={0.15} top="30%" left="3%" filter="blur(80px)" zIndex={0}
+        animate={{ scale:[1,1.15,1] }}
+        transition={{ duration:11, repeat:Infinity, ease:'easeInOut', delay:4 } as any}/>
+      <Box position="absolute" inset={0} zIndex={0} opacity={0.03}
+        backgroundImage="linear-gradient(rgba(255,255,255,0.8) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.8) 1px, transparent 1px)"
+        backgroundSize="60px 60px"/>
 
       {/* Kart */}
-      <MotionBox
-        zIndex={1}
-        w="full"
-        maxW="480px"
-        mx={4}
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: 'easeOut' } as any}
-      >
-        <MotionStack
-          spacing={7}
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-        >
+      <MotionBox zIndex={1} w="full" maxW="460px" mx={4}
+        initial={{ opacity:0, y:32 }} animate={{ opacity:1, y:0 }}
+        transition={{ duration:0.5, ease:'easeOut' } as any}>
+        <MotionStack spacing={7} variants={containerVariants} initial="hidden" animate="visible">
 
-          {/* Logo + Başlık */}
-          <MotionStack variants={itemVariants} align="center" spacing={2}>
-            <Box
-              w={14} h={14}
-              borderRadius="xl"
-              bgGradient="linear(135deg, red.800, orange.600)"
-              display="flex"
-              alignItems="center"
-              justifyContent="center"
-              fontSize="xl"
-              boxShadow="0 4px 20px rgba(200,50,50,0.3)"
-            >
-              🛡️
+          {/* Logo */}
+          <MotionStack variants={itemVariants} align="center" spacing={3}>
+            <MotionBox w={16} h={16} borderRadius="2xl"
+              bg="linear-gradient(135deg,#dc2626,#ea580c)"
+              display="flex" alignItems="center" justifyContent="center"
+              boxShadow="0 0 40px rgba(220,38,38,0.4)"
+              animate={{ y:[0,-6,0] }}
+              transition={{ duration:4, repeat:Infinity, ease:'easeInOut' } as any}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+            </MotionBox>
+            <Box textAlign="center">
+              <Heading fontSize="3xl" fontWeight="800" color="white" letterSpacing="-0.5px">AIDEP</Heading>
+              <Text color="rgba(255,255,255,0.35)" fontSize="xs" mt={0.5}>Yapay Zekâ Destekli Deprem Yönetim Platformu</Text>
             </Box>
-            <Heading
-              fontSize="3xl"
-              fontWeight="800"
-              letterSpacing="-0.5px"
-              bgGradient="linear(to-r, red.300, orange.200)"
-              bgClip="text"
-            >
-              AIDEP
-            </Heading>
-            <Text color="whiteAlpha.400" fontSize="xs" textAlign="center">
-              Yapay Zekâ Destekli Deprem Yönetim Platformu
-            </Text>
           </MotionStack>
 
           {/* Form */}
-          <MotionBox
-            variants={itemVariants}
-            as="form"
-            onSubmit={handleRegister}
-            bg="#111111"
-            border="1px solid"
-            borderColor="whiteAlpha.100"
-            borderRadius="2xl"
-            p={7}
-            boxShadow="0 8px 40px rgba(0,0,0,0.5)"
-            position="relative"
+          <MotionBox variants={itemVariants}
+            as="form" onSubmit={handleRegister}
+            bg="rgba(255,255,255,0.04)" border="1px solid rgba(255,255,255,0.08)"
+            borderRadius="2xl" p={7} backdropFilter="blur(20px)"
+            boxShadow="0 8px 48px rgba(0,0,0,0.4)" position="relative"
             _before={{
-              content: '""',
-              position: 'absolute',
-              top: 0, left: '10%', right: '10%',
-              h: '1px',
-              bgGradient: 'linear(to-r, transparent, red.600, orange.400, transparent)',
-            }}
-          >
+              content:'""', position:'absolute',
+              top:0, left:'10%', right:'10%', h:'1px',
+              bgGradient:'linear(to-r, transparent, #ea580c, #dc2626, transparent)',
+            }}>
             <Stack spacing={4}>
-
-              <Stack spacing={0}>
-                <Heading size="sm" color="white" fontWeight="600">Kayıt Ol</Heading>
-                <Text color="whiteAlpha.400" fontSize="xs" mt={1}>Yeni hesap oluşturun</Text>
-              </Stack>
+              <Box>
+                <Heading size="sm" color="white" fontWeight="700">Kayıt Ol</Heading>
+                <Text color="rgba(255,255,255,0.35)" fontSize="xs" mt={1}>Yeni hesap oluşturun</Text>
+              </Box>
 
               {/* Ad Soyad */}
               <FormControl isRequired>
-                <FormLabel color="whiteAlpha.500" fontSize="xs" fontWeight="600" letterSpacing="wider" textTransform="uppercase" mb={1}>
-                  Ad Soyad
-                </FormLabel>
-                <Input
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Ahmet Yılmaz"
-                  bg="rgba(255,255,255,0.05)"
-                  border="1.5px solid"
-                  borderColor="rgba(255,255,255,0.2)"
-                  _hover={{ borderColor: 'rgba(200,60,60,0.8)', bg: 'rgba(255,255,255,0.07)' }}
-                  _focus={{ borderColor: 'red.400', bg: 'rgba(255,255,255,0.07)', boxShadow: '0 0 0 2px rgba(197,48,48,0.3)' }}
-                  color="white"
-                  _placeholder={{ color: 'rgba(255,255,255,0.25)' }}
-                  borderRadius="lg"
-                  h={12}
-                  fontSize="sm"
-                />
+                <FormLabel {...labelStyle}>Ad Soyad</FormLabel>
+                <Input value={fullName} onChange={e => setFullName(e.target.value)}
+                  placeholder="Ahmet Yılmaz" {...inputStyle}/>
               </FormControl>
 
               {/* Email */}
               <FormControl isRequired>
-                <FormLabel color="whiteAlpha.500" fontSize="xs" fontWeight="600" letterSpacing="wider" textTransform="uppercase" mb={1}>
-                  E-posta
-                </FormLabel>
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="ornek@afad.gov.tr"
-                  bg="rgba(255,255,255,0.05)"
-                  border="1.5px solid"
-                  borderColor="rgba(255,255,255,0.2)"
-                  _hover={{ borderColor: 'rgba(200,60,60,0.8)', bg: 'rgba(255,255,255,0.07)' }}
-                  _focus={{ borderColor: 'red.400', bg: 'rgba(255,255,255,0.07)', boxShadow: '0 0 0 2px rgba(197,48,48,0.3)' }}
-                  color="white"
-                  _placeholder={{ color: 'rgba(255,255,255,0.25)' }}
-                  borderRadius="lg"
-                  h={12}
-                  fontSize="sm"
-                />
+                <FormLabel {...labelStyle}>E-posta</FormLabel>
+                <Input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  placeholder="ornek@afad.gov.tr" {...inputStyle}/>
               </FormControl>
 
               {/* Kurum */}
               <FormControl isRequired>
-                <FormLabel color="whiteAlpha.500" fontSize="xs" fontWeight="600" letterSpacing="wider" textTransform="uppercase" mb={1}>
-                  Kurum
-                </FormLabel>
-                <Select
-                  value={organization}
-                  onChange={(e) => setOrganization(e.target.value)}
-                  bg="rgba(255,255,255,0.05)"
-                  border="1.5px solid"
-                  borderColor="rgba(255,255,255,0.2)"
-                  _hover={{ borderColor: 'rgba(200,60,60,0.8)', bg: 'rgba(255,255,255,0.07)' }}
-                  _focus={{ borderColor: 'red.400', bg: 'rgba(255,255,255,0.07)', boxShadow: '0 0 0 2px rgba(197,48,48,0.3)' }}
-                  color={organization ? 'white' : 'whiteAlpha.200'}
-                  borderRadius="lg"
-                  h={12}
-                  fontSize="sm"
+                <FormLabel {...labelStyle}>Kurum</FormLabel>
+                <Select value={org} onChange={e => setOrg(e.target.value)}
                   placeholder="Kurum seçin"
-                  sx={{ option: { background: '#1a1a1a', color: 'white' } }}
-                >
+                  bg="rgba(255,255,255,0.05)" border="1px solid rgba(255,255,255,0.1)"
+                  _hover={{ borderColor:'rgba(249,115,22,0.5)' }}
+                  _focus={{ borderColor:'#f97316', boxShadow:'0 0 0 3px rgba(249,115,22,0.15)' }}
+                  color={org ? 'white' : 'rgba(255,255,255,0.2)'} borderRadius="xl" h={12} fontSize="sm"
+                  sx={{ option:{ background:'#0f1729', color:'white' } }}>
                   <option value="afad">AFAD</option>
                   <option value="umke">UMKE</option>
                   <option value="kizilay">Kızılay</option>
@@ -275,112 +168,50 @@ function RegisterPage() {
 
               {/* Şifre */}
               <FormControl isRequired>
-                <FormLabel color="whiteAlpha.500" fontSize="xs" fontWeight="600" letterSpacing="wider" textTransform="uppercase" mb={1}>
-                  Şifre
-                </FormLabel>
-                <Box position="relative" w="full">
-                  <Input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
-                    bg="rgba(255,255,255,0.05)"
-                    border="1.5px solid"
-                    borderColor="rgba(255,255,255,0.2)"
-                    _hover={{ borderColor: 'rgba(200,60,60,0.8)', bg: 'rgba(255,255,255,0.07)' }}
-                    _focus={{ borderColor: 'red.400', bg: 'rgba(255,255,255,0.07)', boxShadow: '0 0 0 2px rgba(197,48,48,0.3)' }}
-                    color="white"
-                    _placeholder={{ color: 'rgba(255,255,255,0.25)' }}
-                    borderRadius="lg"
-                    h={12}
-                    fontSize="sm"
-                    pr={12}
-                  />
-                  <IconButton
-                    aria-label="Şifreyi göster"
-                    variant="ghost"
-                    size="sm"
-                    color="whiteAlpha.400"
-                    _hover={{ color: 'white', bg: 'transparent' }}
-                    onClick={() => setShowPassword(!showPassword)}
-                    icon={<Text fontSize="sm">{showPassword ? '🙈' : '👁️'}</Text>}
-                    position="absolute"
-                    right={2}
-                    top="50%"
-                    transform="translateY(-50%)"
-                  />
+                <FormLabel {...labelStyle}>Şifre</FormLabel>
+                <Box position="relative">
+                  <Input type={showPw ? 'text' : 'password'} value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="••••••••" {...inputStyle} pr={12}/>
+                  <IconButton aria-label="şifre" variant="ghost" size="sm"
+                    color="rgba(255,255,255,0.3)" _hover={{ color:'white', bg:'transparent' }}
+                    icon={<EyeIcon open={showPw}/>} onClick={() => setShowPw(!showPw)}
+                    position="absolute" right={2} top="50%" transform="translateY(-50%)"/>
                 </Box>
               </FormControl>
 
               {/* Şifre tekrar */}
               <FormControl isRequired>
-                <FormLabel color="whiteAlpha.500" fontSize="xs" fontWeight="600" letterSpacing="wider" textTransform="uppercase" mb={1}>
-                  Şifre Tekrar
-                </FormLabel>
-                <Input
-                  type={showPassword ? 'text' : 'password'}
-                  value={passwordConfirm}
-                  onChange={(e) => setPasswordConfirm(e.target.value)}
-                  placeholder="••••••••"
-                  bg="rgba(255,255,255,0.05)"
-                  border="1.5px solid"
-                  borderColor="rgba(255,255,255,0.2)"
-                  _hover={{ borderColor: 'rgba(200,60,60,0.8)', bg: 'rgba(255,255,255,0.07)' }}
-                  _focus={{ borderColor: 'red.400', bg: 'rgba(255,255,255,0.07)', boxShadow: '0 0 0 2px rgba(197,48,48,0.3)' }}
-                  color="white"
-                  _placeholder={{ color: 'rgba(255,255,255,0.25)' }}
-                  borderRadius="lg"
-                  h={12}
-                  fontSize="sm"
-                />
+                <FormLabel {...labelStyle}>Şifre Tekrar</FormLabel>
+                <Input type={showPw ? 'text' : 'password'} value={confirm}
+                  onChange={e => setConfirm(e.target.value)}
+                  placeholder="••••••••" {...inputStyle}/>
               </FormControl>
 
-              {/* Kayıt butonu */}
-              <MotionBox
-                whileHover={{ scale: 1.015 } as any}
-                whileTap={{ scale: 0.985 } as any}
-                mt={1}
-              >
-                <Button
-                  type="submit"
-                  isLoading={isLoading}
-                  loadingText="Kaydediliyor..."
-                  w="full"
-                  h={12}
-                  bgGradient="linear(to-r, red.700, orange.600)"
-                  color="white"
-                  fontWeight="600"
-                  fontSize="sm"
-                  borderRadius="lg"
-                  border="none"
-                  _hover={{ bgGradient: 'linear(to-r, red.600, orange.500)', boxShadow: '0 0 20px rgba(200,50,50,0.3)' }}
-                  _active={{ bgGradient: 'linear(to-r, red.800, orange.700)' }}
-                >
+              {/* Buton */}
+              <MotionBox whileHover={{ scale:1.02 } as any} whileTap={{ scale:0.97 } as any} mt={1}>
+                <Button type="submit" isLoading={loading} loadingText="Kaydediliyor..."
+                  w="full" h={12} bg="linear-gradient(135deg,#dc2626,#ea580c)"
+                  color="white" fontWeight="700" fontSize="sm" borderRadius="xl" border="none"
+                  _hover={{ opacity:0.9, boxShadow:'0 0 32px rgba(220,38,38,0.5)' }}
+                  _active={{ opacity:0.8 }}>
                   Kayıt Ol
                 </Button>
               </MotionBox>
 
-              {/* Giriş yap linki */}
-              <Text textAlign="center" color="whiteAlpha.400" fontSize="xs">
+              <Text textAlign="center" color="rgba(255,255,255,0.3)" fontSize="xs">
                 Zaten hesabınız var mı?{' '}
-                <Link
-                  as={RouterLink}
-                  to="/login"
-                  color="orange.300"
-                  fontWeight="600"
-                  _hover={{ color: 'orange.200', textDecoration: 'none' }}
-                >
+                <Link as={RouterLink} to="/login" color="#f97316" fontWeight="600"
+                  _hover={{ color:'#fb923c', textDecoration:'none' }}>
                   Giriş Yap
                 </Link>
               </Text>
-
             </Stack>
           </MotionBox>
 
-          {/* Alt not */}
           <MotionBox variants={itemVariants} textAlign="center">
-            <Text color="whiteAlpha.200" fontSize="xs">
-              Yalnızca yetkili STK, AFAD ve UMKE personeli
+            <Text color="rgba(255,255,255,0.15)" fontSize="xs">
+              Yalnızca yetkili STK, AFAD ve UMKE personeli · v0.1.0
             </Text>
           </MotionBox>
 
