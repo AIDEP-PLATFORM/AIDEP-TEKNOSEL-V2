@@ -6,8 +6,6 @@ import {
   FormLabel,
   Heading,
   Input,
-  InputGroup,
-  InputRightElement,
   Stack,
   Text,
   useToast,
