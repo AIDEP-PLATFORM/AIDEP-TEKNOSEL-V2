@@ -1,0 +1,6 @@
+# AI / ML — Bu dosya sadece AI model servisi için kullanılır
+# Dev container'a kurulmasına gerek yok
+ultralytics==8.3.145
+xgboost==2.1.4
+numpy==2.2.5
+pillow==11.2.1
