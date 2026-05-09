@@ -6,6 +6,7 @@ import { motion } from 'framer-motion'
 import { useState } from 'react'
 import { useNavigate, Link as RouterLink } from 'react-router-dom'
 import { setToken, setRole } from '@/utils/auth'
+import AidepLogo from '@/components/common/AidepLogo'
 
 const MotionBox = motion(Box)
 const MotionStack = motion(Stack)
@@ -85,21 +86,12 @@ function LoginPage() {
 
           {/* Logo */}
           <MotionStack variants={itemVariants} align="center" spacing={3}>
-            <MotionBox
-              w={16} h={16} borderRadius="2xl"
-              bg="linear-gradient(135deg,#dc2626,#ea580c)"
-              display="flex" alignItems="center" justifyContent="center"
-              boxShadow="0 0 40px rgba(220,38,38,0.4)"
-              animate={{ y:[0,-6,0] }}
-              transition={{ duration:4, repeat:Infinity, ease:'easeInOut' } as any}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-              </svg>
+            <MotionBox animate={{ y:[0,-6,0] }} transition={{ duration:4, repeat:Infinity, ease:'easeInOut' } as any}>
+              <AidepLogo size={80} variant="auth" showText={true} />
             </MotionBox>
-            <Box textAlign="center">
-              <Heading fontSize="3xl" fontWeight="800" color="white" letterSpacing="-0.5px">AIDEP</Heading>
-              <Text color="rgba(255,255,255,0.35)" fontSize="xs" mt={0.5}>Yapay Zekâ Destekli Deprem Yönetim Platformu</Text>
-            </Box>
+            <Text color="rgba(255,255,255,0.35)" fontSize="xs" mt={1}>
+              Yapay Zekâ Destekli Deprem Yönetim Platformu
+            </Text>
           </MotionStack>
 
           {/* Form */}

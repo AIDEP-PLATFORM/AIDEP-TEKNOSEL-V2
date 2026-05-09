@@ -1,10 +1,11 @@
 import {
   Box, Button, Flex, FormControl, FormLabel,
-  Heading, Input, Stack, Text, useToast, IconButton, Link, Select,
+  Heading, Input, Stack, Text, useToast, IconButton, Link, Select, Grid,
 } from '@chakra-ui/react'
 import { motion } from 'framer-motion'
 import { useState } from 'react'
 import { useNavigate, Link as RouterLink } from 'react-router-dom'
+import AidepLogo from '@/components/common/AidepLogo'
 
 const MotionBox = motion(Box)
 const MotionStack = motion(Stack)
@@ -30,8 +31,8 @@ const EyeIcon = ({ open }: { open:boolean }) => (
 const inputStyle = {
   bg: 'rgba(255,255,255,0.05)',
   border: '1px solid rgba(255,255,255,0.1)',
-  _hover: { borderColor:'rgba(249,115,22,0.5)', bg:'rgba(255,255,255,0.07)' },
-  _focus: { borderColor:'#f97316', bg:'rgba(255,255,255,0.07)', boxShadow:'0 0 0 3px rgba(249,115,22,0.15)' },
+  _hover: { borderColor:'rgba(99,102,241,0.5)', bg:'rgba(255,255,255,0.07)' },
+  _focus: { borderColor:'#818cf8', bg:'rgba(255,255,255,0.07)', boxShadow:'0 0 0 3px rgba(99,102,241,0.15)' },
   color: 'white',
   _placeholder: { color:'rgba(255,255,255,0.2)' },
   borderRadius: 'xl',
@@ -49,22 +50,54 @@ const labelStyle = {
 }
 
 function RegisterPage() {
-  const [fullName, setFullName]           = useState('')
-  const [email, setEmail]                 = useState('')
-  const [org, setOrg]                     = useState('')
-  const [password, setPassword]           = useState('')
-  const [confirm, setConfirm]             = useState('')
-  const [showPw, setShowPw]               = useState(false)
-  const [loading, setLoading]             = useState(false)
+  const [fullName, setFullName] = useState('')
+  const [tc, setTc]             = useState('')
+  const [phone, setPhone]       = useState('')
+  const [email, setEmail]       = useState('')
+  const [org, setOrg]           = useState('')
+  const [password, setPassword] = useState('')
+  const [confirm, setConfirm]   = useState('')
+  const [showPw, setShowPw]     = useState(false)
+  const [loading, setLoading]   = useState(false)
   const navigate = useNavigate()
   const toast    = useToast()
 
+  /* TC formatla: sadece rakam, max 11 */
+  const handleTc = (val: string) => {
+    const digits = val.replace(/\D/g, '').slice(0, 11)
+    setTc(digits)
+  }
+
+  /* Telefon formatla: 05XX XXX XX XX */
+  const handlePhone = (val: string) => {
+    const digits = val.replace(/\D/g, '').slice(0, 11)
+    let formatted = digits
+    if (digits.length > 4)  formatted = digits.slice(0,4)  + ' ' + digits.slice(4)
+    if (digits.length > 7)  formatted = digits.slice(0,4)  + ' ' + digits.slice(4,7) + ' ' + digits.slice(7)
+    if (digits.length > 9)  formatted = digits.slice(0,4)  + ' ' + digits.slice(4,7) + ' ' + digits.slice(7,9) + ' ' + digits.slice(9)
+    setPhone(formatted)
+  }
+
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault()
+
+    const tcDigits = tc.replace(/\D/g, '')
+    if (tcDigits.length !== 11 || tcDigits[0] === '0') {
+      toast({ title:'Geçersiz TC Kimlik No', description:'11 haneli olmalı ve 0 ile başlamamalıdır.', status:'error', duration:3000, isClosable:true, position:'top' })
+      return
+    }
+
+    const phoneDigits = phone.replace(/\D/g, '')
+    if (phoneDigits.length !== 11 || !phoneDigits.startsWith('0')) {
+      toast({ title:'Geçersiz telefon numarası', description:'05XX XXX XX XX formatında giriniz.', status:'error', duration:3000, isClosable:true, position:'top' })
+      return
+    }
+
     if (password !== confirm) {
       toast({ title:'Şifreler eşleşmiyor', status:'error', duration:3000, isClosable:true, position:'top' })
       return
     }
+
     setLoading(true)
     setTimeout(() => {
       toast({ title:'Kayıt başarılı', description:'Giriş yapabilirsiniz.', status:'success', duration:3000, isClosable:true, position:'top' })
@@ -76,7 +109,7 @@ function RegisterPage() {
   return (
     <Flex minH="100vh" align="center" justify="center" bg="#08091a" position="relative" overflow="hidden" py={8}>
 
-      {/* Arka plan orb'lar — indigo/mor palette */}
+      {/* Arka plan orb'lar */}
       <MotionBox position="absolute" w="700px" h="700px" borderRadius="full" bg="#2d1b69"
         opacity={0.25} top="-200px" right="-150px" filter="blur(120px)" zIndex={0}
         animate={{ scale:[1,1.1,1], opacity:[0.25,0.35,0.25] }}
@@ -94,27 +127,19 @@ function RegisterPage() {
         backgroundSize="60px 60px"/>
 
       {/* Kart */}
-      <MotionBox zIndex={1} w="full" maxW="460px" mx={4}
+      <MotionBox zIndex={1} w="full" maxW="500px" mx={4}
         initial={{ opacity:0, y:32 }} animate={{ opacity:1, y:0 }}
         transition={{ duration:0.5, ease:'easeOut' } as any}>
         <MotionStack spacing={7} variants={containerVariants} initial="hidden" animate="visible">
 
           {/* Logo */}
           <MotionStack variants={itemVariants} align="center" spacing={3}>
-            <MotionBox w={16} h={16} borderRadius="2xl"
-              bg="linear-gradient(135deg,#dc2626,#ea580c)"
-              display="flex" alignItems="center" justifyContent="center"
-              boxShadow="0 0 40px rgba(220,38,38,0.4)"
-              animate={{ y:[0,-6,0] }}
-              transition={{ duration:4, repeat:Infinity, ease:'easeInOut' } as any}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-              </svg>
+            <MotionBox animate={{ y:[0,-6,0] }} transition={{ duration:4, repeat:Infinity, ease:'easeInOut' } as any}>
+              <AidepLogo size={80} variant="auth" showText={true} />
             </MotionBox>
-            <Box textAlign="center">
-              <Heading fontSize="3xl" fontWeight="800" color="white" letterSpacing="-0.5px">AIDEP</Heading>
-              <Text color="rgba(255,255,255,0.35)" fontSize="xs" mt={0.5}>Yapay Zekâ Destekli Deprem Yönetim Platformu</Text>
-            </Box>
+            <Text color="rgba(255,255,255,0.35)" fontSize="xs" mt={1}>
+              Yapay Zekâ Destekli Deprem Yönetim Platformu
+            </Text>
           </MotionStack>
 
           {/* Form */}
@@ -126,7 +151,7 @@ function RegisterPage() {
             _before={{
               content:'""', position:'absolute',
               top:0, left:'10%', right:'10%', h:'1px',
-              bgGradient:'linear(to-r, transparent, #ea580c, #dc2626, transparent)',
+              bgGradient:'linear(to-r, transparent, #6366f1, #7c3aed, transparent)',
             }}>
             <Stack spacing={4}>
               <Box>
@@ -141,6 +166,36 @@ function RegisterPage() {
                   placeholder="Ahmet Yılmaz" {...inputStyle}/>
               </FormControl>
 
+              {/* TC + Telefon — yan yana */}
+              <Grid templateColumns="1fr 1fr" gap={3}>
+                <FormControl isRequired>
+                  <FormLabel {...labelStyle}>TC Kimlik No</FormLabel>
+                  <Input
+                    value={tc}
+                    onChange={e => handleTc(e.target.value)}
+                    placeholder="12345678901"
+                    inputMode="numeric"
+                    maxLength={11}
+                    {...inputStyle}
+                    isInvalid={tc.length > 0 && (tc.length < 11 || tc[0] === '0')}
+                  />
+                  {tc.length > 0 && tc.length < 11 && (
+                    <Text fontSize="10px" color="#f87171" mt={1}>{tc.length}/11 hane</Text>
+                  )}
+                </FormControl>
+
+                <FormControl isRequired>
+                  <FormLabel {...labelStyle}>Telefon</FormLabel>
+                  <Input
+                    value={phone}
+                    onChange={e => handlePhone(e.target.value)}
+                    placeholder="0532 123 45 67"
+                    inputMode="numeric"
+                    {...inputStyle}
+                  />
+                </FormControl>
+              </Grid>
+
               {/* Email */}
               <FormControl isRequired>
                 <FormLabel {...labelStyle}>E-posta</FormLabel>
@@ -154,10 +209,10 @@ function RegisterPage() {
                 <Select value={org} onChange={e => setOrg(e.target.value)}
                   placeholder="Kurum seçin"
                   bg="rgba(255,255,255,0.05)" border="1px solid rgba(255,255,255,0.1)"
-                  _hover={{ borderColor:'rgba(249,115,22,0.5)' }}
-                  _focus={{ borderColor:'#f97316', boxShadow:'0 0 0 3px rgba(249,115,22,0.15)' }}
+                  _hover={{ borderColor:'rgba(99,102,241,0.5)' }}
+                  _focus={{ borderColor:'#818cf8', boxShadow:'0 0 0 3px rgba(99,102,241,0.15)' }}
                   color={org ? 'white' : 'rgba(255,255,255,0.2)'} borderRadius="xl" h={12} fontSize="sm"
-                  sx={{ option:{ background:'#0f1729', color:'white' } }}>
+                  sx={{ option:{ background:'#0f0d1f', color:'white' } }}>
                   <option value="afad">AFAD</option>
                   <option value="umke">UMKE</option>
                   <option value="kizilay">Kızılay</option>
@@ -166,34 +221,41 @@ function RegisterPage() {
                 </Select>
               </FormControl>
 
-              {/* Şifre */}
-              <FormControl isRequired>
-                <FormLabel {...labelStyle}>Şifre</FormLabel>
-                <Box position="relative">
-                  <Input type={showPw ? 'text' : 'password'} value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder="••••••••" {...inputStyle} pr={12}/>
-                  <IconButton aria-label="şifre" variant="ghost" size="sm"
-                    color="rgba(255,255,255,0.3)" _hover={{ color:'white', bg:'transparent' }}
-                    icon={<EyeIcon open={showPw}/>} onClick={() => setShowPw(!showPw)}
-                    position="absolute" right={2} top="50%" transform="translateY(-50%)"/>
-                </Box>
-              </FormControl>
+              {/* Şifre + Tekrar — yan yana */}
+              <Grid templateColumns="1fr 1fr" gap={3}>
+                <FormControl isRequired>
+                  <FormLabel {...labelStyle}>Şifre</FormLabel>
+                  <Box position="relative">
+                    <Input type={showPw ? 'text' : 'password'} value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      placeholder="••••••••" {...inputStyle} pr={10}/>
+                    <IconButton aria-label="şifre" variant="ghost" size="sm"
+                      color="rgba(255,255,255,0.3)" _hover={{ color:'white', bg:'transparent' }}
+                      icon={<EyeIcon open={showPw}/>} onClick={() => setShowPw(!showPw)}
+                      position="absolute" right={1} top="50%" transform="translateY(-50%)"/>
+                  </Box>
+                </FormControl>
 
-              {/* Şifre tekrar */}
-              <FormControl isRequired>
-                <FormLabel {...labelStyle}>Şifre Tekrar</FormLabel>
-                <Input type={showPw ? 'text' : 'password'} value={confirm}
-                  onChange={e => setConfirm(e.target.value)}
-                  placeholder="••••••••" {...inputStyle}/>
-              </FormControl>
+                <FormControl isRequired>
+                  <FormLabel {...labelStyle}>Şifre Tekrar</FormLabel>
+                  <Box position="relative">
+                    <Input type={showPw ? 'text' : 'password'} value={confirm}
+                      onChange={e => setConfirm(e.target.value)}
+                      placeholder="••••••••" {...inputStyle}
+                      isInvalid={confirm.length > 0 && confirm !== password}/>
+                  </Box>
+                  {confirm.length > 0 && confirm !== password && (
+                    <Text fontSize="10px" color="#f87171" mt={1}>Şifreler eşleşmiyor</Text>
+                  )}
+                </FormControl>
+              </Grid>
 
               {/* Buton */}
               <MotionBox whileHover={{ scale:1.02 } as any} whileTap={{ scale:0.97 } as any} mt={1}>
                 <Button type="submit" isLoading={loading} loadingText="Kaydediliyor..."
-                  w="full" h={12} bg="linear-gradient(135deg,#dc2626,#ea580c)"
+                  w="full" h={12} bg="linear-gradient(135deg,#6366f1,#7c3aed)"
                   color="white" fontWeight="700" fontSize="sm" borderRadius="xl" border="none"
-                  _hover={{ opacity:0.9, boxShadow:'0 0 32px rgba(220,38,38,0.5)' }}
+                  _hover={{ opacity:0.9, boxShadow:'0 0 32px rgba(99,102,241,0.5)' }}
                   _active={{ opacity:0.8 }}>
                   Kayıt Ol
                 </Button>
@@ -201,8 +263,8 @@ function RegisterPage() {
 
               <Text textAlign="center" color="rgba(255,255,255,0.3)" fontSize="xs">
                 Zaten hesabınız var mı?{' '}
-                <Link as={RouterLink} to="/login" color="#f97316" fontWeight="600"
-                  _hover={{ color:'#fb923c', textDecoration:'none' }}>
+                <Link as={RouterLink} to="/login" color="#818cf8" fontWeight="600"
+                  _hover={{ color:'#a5b4fc', textDecoration:'none' }}>
                   Giriş Yap
                 </Link>
               </Text>

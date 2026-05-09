@@ -2,6 +2,7 @@ import { Box, Flex, Stack, Text } from '@chakra-ui/react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { removeToken, getRole } from '@/utils/auth'
+import AidepLogo from '@/components/common/AidepLogo'
 
 const MotionBox = motion(Box)
 const MotionFlex = motion(Flex)
@@ -99,17 +100,9 @@ function Sidebar() {
         transition={{ duration:12, repeat:Infinity, ease:'easeInOut', delay:2 } as any}/>
 
       {/* Logo */}
-      <Flex align="center" gap={3} px={2} mb={6} cursor="pointer" onClick={() => navigate('/dashboard')} position="relative" zIndex={1}>
-        <Flex w={9} h={9} borderRadius="lg" bg="linear-gradient(135deg,#6366f1,#7c3aed)"
-          align="center" justify="center" color="white" flexShrink={0}
-          boxShadow="0 0 16px rgba(99,102,241,0.5)">
-          {Icons.shield}
-        </Flex>
-        <Box>
-          <Text color="white" fontWeight="800" fontSize="sm" letterSpacing="wider">AIDEP</Text>
-          <Text color="rgba(255,255,255,0.3)" fontSize="9px" letterSpacing="widest" textTransform="uppercase">Yönetim Paneli</Text>
-        </Box>
-      </Flex>
+      <Box px={2} mb={6} cursor="pointer" onClick={() => navigate('/dashboard')} position="relative" zIndex={1}>
+        <AidepLogo size={36} variant="sidebar" showText={true} />
+      </Box>
 
       {/* Nav */}
       <Stack spacing={0} flex={1} position="relative" zIndex={1} overflowY="auto" overflowX="hidden"
