@@ -12,10 +12,13 @@ psycopg2-binary==2.9.10
 # Settings & Validation
 pydantic==2.11.4
 pydantic-settings==2.9.1
+pydantic[email]==2.11.4
+python-dotenv==1.1.0
 
 # Auth
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
 python-multipart==0.0.20
 
 # Cache
@@ -27,12 +30,6 @@ aioboto3==13.3.0
 
 # HTTP Client
 httpx==0.28.1
-
-# AI / ML
-ultralytics==8.3.145
-xgboost==2.1.4
-numpy==2.2.5
-pillow==11.2.1
 
 # Testing
 pytest==8.3.5

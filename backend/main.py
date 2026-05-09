@@ -1,6 +1,8 @@
 import logging
-from fastapi import FastAPI
+import time
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
 from core.config import settings
@@ -9,6 +11,7 @@ from core.redis import init_redis, close_redis
 from core.minio import init_minio
 from core.s3 import init_s3
 from core.logging import setup_logging
+from routers import auth, ngo
 
 setup_logging()
 
@@ -41,6 +44,34 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(auth.router)
+app.include_router(ngo.router)
+
+
+# ─── Middleware: istek/yanıt süresi logu ───────────────────────
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    duration = round((time.time() - start) * 1000)
+    logger.info(f"{request.method} {request.url.path} → {response.status_code} ({duration}ms)")
+    return response
+
+
+# ─── Global hata yakalayıcı ────────────────────────────────────
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(
+        f"Yakalanmamis hata: {type(exc).__name__}: {exc} | "
+        f"{request.method} {request.url.path}",
+        exc_info=True,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Sunucu hatası. Lütfen tekrar deneyin."},
+    )
 
 
 @app.get("/health")
