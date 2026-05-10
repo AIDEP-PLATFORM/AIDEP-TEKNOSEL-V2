@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # OSRM
     OSRM_URL: str = "http://osrm:5000"
 
+    # AI Service
+    AI_SERVICE_URL: str = "http://ai-service:8000"
+
     # Auth
     SECRET_KEY: str
     ALGORITHM: str = "HS256"

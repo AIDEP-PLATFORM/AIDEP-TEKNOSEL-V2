@@ -12,6 +12,7 @@ from core.minio import init_minio
 from core.s3 import init_s3
 from core.logging import setup_logging
 from routers import auth, ngo
+from routers import ai as ai_router
 
 setup_logging()
 
@@ -48,6 +49,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(ngo.router)
+app.include_router(ai_router.router)
 
 
 # ─── Middleware: istek/yanıt süresi logu ───────────────────────
