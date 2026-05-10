@@ -29,8 +29,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   loadFromStorage: async () => {
-    const userStr = storage.getString('user');
-    const tokensStr = storage.getString('tokens');
+    const userStr = await storage.getString('user');
+    const tokensStr = await storage.getString('tokens');
     if (userStr && tokensStr) {
       set({ user: JSON.parse(userStr), tokens: JSON.parse(tokensStr) });
     }

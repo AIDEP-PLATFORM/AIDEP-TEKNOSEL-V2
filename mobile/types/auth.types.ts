@@ -1,4 +1,4 @@
-export type UserRole = 'citizen' | 'rescue' | 'volunteer' | 'afad';
+export type UserRole = 'citizen' | 'volunteer' | 'stk' | 'afad';
 
 export interface User {
   id: string;
