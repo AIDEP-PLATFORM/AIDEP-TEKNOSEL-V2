@@ -140,3 +140,32 @@ vite.config.ts.timestamp-*
 
 # Vite cache
 **/.vite/
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+**/.venv/
+**/venv/
+
+# AI model weights (büyük ikili dosyalar — git-lfs kullan veya dışarıda tut)
+ai-service/weights/*.pt
+ai-service/weights/*.json
+backend/weights/
+
+# Alembic
+backend/alembic/versions/*.pyc
+
+# pytest
+.pytest_cache/
+**/.pytest_cache/
+htmlcov/
+
+# MyPy
+.mypy_cache/
+
+# Ruff / Black
+.ruff_cache/
