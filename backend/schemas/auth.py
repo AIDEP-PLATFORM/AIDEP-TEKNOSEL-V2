@@ -12,6 +12,7 @@ class CitizenRegisterRequest(BaseModel):
     phone: str
     password: str
     full_name: str
+    tc_no: Optional[str] = None
 
     @field_validator("phone")
     @classmethod
@@ -38,7 +39,7 @@ class VolunteerRegisterRequest(CitizenRegisterRequest):
 
 class NgoRegisterRequest(CitizenRegisterRequest):
     organization_name: str
-    authorization_number: str
+    authorization_number: Optional[str] = None
 
 
 # ─── Login ─────────────────────────────────────────────────────

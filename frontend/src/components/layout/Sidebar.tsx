@@ -32,10 +32,13 @@ const analysisNav = [
 ]
 
 const roleLabel: Record<string, { label: string; color: string }> = {
-  admin: { label: 'Yönetici', color: '#818cf8' },
-  afad:  { label: 'AFAD',     color: '#60a5fa' },
-  stk:   { label: 'STK',      color: '#34d399' },
-  umke:  { label: 'UMKE',     color: '#fbbf24' },
+  admin:     { label: 'Yönetici', color: '#818cf8' },
+  afad:      { label: 'AFAD',     color: '#60a5fa' },
+  stk:       { label: 'STK',      color: '#34d399' },
+  umke:      { label: 'UMKE',     color: '#fbbf24' },
+  NGO:       { label: 'STK/NGO',  color: '#34d399' },
+  CITIZEN:   { label: 'Vatandaş', color: '#94a3b8' },
+  VOLUNTEER: { label: 'Gönüllü',  color: '#fbbf24' },
 }
 
 function NavItem({ item, isActive, onClick }: { item: typeof mainNav[0]; isActive: boolean; onClick: () => void }) {
@@ -76,7 +79,7 @@ function Sidebar() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const role = getRole()
-  const roleInfo = role ? roleLabel[role] : { label: 'Misafir', color: '#9ca3af' }
+  const roleInfo = (role && roleLabel[role]) ? roleLabel[role] : { label: 'Yetkili', color: '#818cf8' }
 
   return (
     <MotionFlex
@@ -133,7 +136,9 @@ function Sidebar() {
       <Box position="relative" zIndex={1} mt={3}>
         <Box h="1px" bg="rgba(129,140,248,0.1)" mb={3} />
         <Flex align="center" gap={3} px={2} py={2} borderRadius="xl"
-          bg="rgba(99,102,241,0.06)" border="1px solid rgba(129,140,248,0.12)">
+          bg="rgba(99,102,241,0.06)" border="1px solid rgba(129,140,248,0.12)"
+          cursor="pointer" onClick={() => navigate('/profile')}
+          _hover={{ bg: 'rgba(99,102,241,0.1)' }} transition="background 0.2s">
           <Flex w={9} h={9} borderRadius="lg" bg={`${roleInfo.color}20`}
             border={`1px solid ${roleInfo.color}40`}
             align="center" justify="center" flexShrink={0}>
@@ -151,8 +156,9 @@ function Sidebar() {
               </Text>
             </Flex>
           </Box>
-          <Box color="rgba(255,255,255,0.25)" cursor="pointer" onClick={() => { removeToken(); navigate('/login') }}
-            _hover={{ color: '#f87171' }} transition="color 0.2s">
+          <Box color="rgba(255,255,255,0.25)" cursor="pointer"
+            onClick={e => { e.stopPropagation(); removeToken(); navigate('/login') }}
+            _hover={{ color: '#f87171' }} transition="color 0.2s" p={1}>
             {Icons.logout}
           </Box>
         </Flex>

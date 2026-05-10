@@ -1,12 +1,14 @@
 import {
-  Box, Button, Flex, FormControl, FormLabel,
-  Heading, Input, Stack, Text, useToast, IconButton, Link,
+  Box, Button, Flex, FormControl, FormLabel, FormErrorMessage,
+  Heading, Input, InputGroup, InputRightElement,
+  Stack, Text, Link,
 } from '@chakra-ui/react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useState } from 'react'
 import { useNavigate, Link as RouterLink } from 'react-router-dom'
-import { setToken, setRole } from '@/utils/auth'
+import { setToken, setRole, setUser } from '@/utils/auth'
 import AidepLogo from '@/components/common/AidepLogo'
+import { apiLogin, extractErrorMessage } from '@/services/authService'
 
 const MotionBox = motion(Box)
 const MotionStack = motion(Stack)
@@ -29,33 +31,83 @@ const EyeIcon = ({ open }: { open: boolean }) => (
   </svg>
 )
 
-function LoginPage() {
-  const [email, setEmail]           = useState('')
-  const [password, setPassword]     = useState('')
-  const [showPw, setShowPw]         = useState(false)
-  const [loading, setLoading]       = useState(false)
-  const navigate = useNavigate()
-  const toast    = useToast()
+// ── Inline hata kutusu ─────────────────────────────────────────────
+function ErrorBox({ message }: { message: string }) {
+  return (
+    <AnimatePresence>
+      {message && (
+        <MotionBox
+          key="error"
+          initial={{ opacity: 0, y: -6, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0,  scale: 1    }}
+          exit={{    opacity: 0, y: -6, scale: 0.98 }}
+          transition={{ duration: 0.22, ease: 'easeOut' } as any}
+        >
+          <Flex
+            align="center" gap={2.5}
+            px={4} py={3} borderRadius="xl"
+            bg="rgba(239,68,68,0.08)"
+            border="1px solid rgba(239,68,68,0.28)"
+            boxShadow="0 0 20px rgba(239,68,68,0.08)"
+          >
+            {/* Uyarı ikonu */}
+            <Box color="#f87171" flexShrink={0}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2.5"
+                strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8"  x2="12"   y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+            </Box>
+            <Text fontSize="xs" color="#fca5a5" fontWeight="500" lineHeight="1.4">
+              {message}
+            </Text>
+          </Flex>
+        </MotionBox>
+      )}
+    </AnimatePresence>
+  )
+}
 
-  const handleLogin = (e: React.FormEvent) => {
+function LoginPage() {
+  const [email, setEmail]       = useState('')
+  const [password, setPassword] = useState('')
+  const [showPw, setShowPw]     = useState(false)
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState('')
+  const [emailError, setEmailError] = useState('')
+  const navigate = useNavigate()
+
+  // E-posta formatını kontrol et
+  const validateEmail = (val: string) => {
+    if (!val) return 'E-posta zorunludur'
+    if (!val.includes('@')) return `"${val.split('@')[0]}" adresinde "@" eksik`
+    if (!/\S+@\S+\.\S+/.test(val)) return 'Geçerli bir e-posta adresi girin'
+    return ''
+  }
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError('')          // her denemede temizle
     setLoading(true)
-    setTimeout(() => {
-      if (email && password) {
-        setToken('mock-token-aidep-2024')
-        setRole('admin')
-        navigate('/dashboard')
-      } else {
-        toast({ title:'Hata', description:'Tüm alanları doldurun.', status:'error', duration:3000, isClosable:true, position:'top' })
-      }
+    try {
+      const res = await apiLogin({ email, password })
+      setToken(res.access_token)
+      setRole(res.user.role)
+      setUser(res.user)
+      navigate('/dashboard')
+    } catch (err: unknown) {
+      setError(extractErrorMessage(err))   // ← hata string'i state'e yaz
+    } finally {
       setLoading(false)
-    }, 800)
+    }
   }
 
   return (
     <Flex minH="100vh" align="center" justify="center" bg="#08091a" position="relative" overflow="hidden">
 
-      {/* Animasyonlu arka plan orb'lar — indigo/mor palette */}
+      {/* Arka plan orb'lar */}
       <MotionBox position="absolute" w="800px" h="800px" borderRadius="full" bg="#2d1b69"
         opacity={0.25} top="-300px" right="-200px" filter="blur(130px)" zIndex={0}
         animate={{ scale:[1,1.1,1], opacity:[0.25,0.35,0.25] }}
@@ -73,7 +125,6 @@ function LoginPage() {
         animate={{ scale:[1,1.1,1] }}
         transition={{ duration:13, repeat:Infinity, ease:'easeInOut', delay:1 } as any}/>
 
-      {/* İnce grid dokusu */}
       <Box position="absolute" inset={0} zIndex={0} opacity={0.03}
         backgroundImage="linear-gradient(rgba(255,255,255,0.8) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.8) 1px, transparent 1px)"
         backgroundSize="60px 60px"/>
@@ -115,19 +166,42 @@ function LoginPage() {
                 <Text color="rgba(255,255,255,0.35)" fontSize="xs" mt={1}>Hesabınıza erişin</Text>
               </Box>
 
-              {/* Email */}
-              <FormControl isRequired>
+              {/* ── Hata kutusu — e-posta/şifre yanlışsa burada gösterilir ── */}
+              <ErrorBox message={error} />
+
+              {/* E-posta */}
+              <FormControl isRequired isInvalid={!!emailError}>
                 <FormLabel fontSize="10px" fontWeight="700" color="rgba(255,255,255,0.4)"
                   letterSpacing="widest" textTransform="uppercase" mb={1.5}>
                   E-posta
                 </FormLabel>
-                <Input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                <Input
+                  type="email" value={email}
+                  onChange={e => {
+                    setEmail(e.target.value)
+                    setError('')
+                    if (emailError) setEmailError('') // yazınca hatayı temizle
+                  }}
+                  onBlur={e => setEmailError(validateEmail(e.target.value))} // odak ayrılınca kontrol
                   placeholder="ornek@afad.gov.tr"
-                  bg="rgba(255,255,255,0.05)" border="1px solid rgba(255,255,255,0.1)"
+                  bg="rgba(255,255,255,0.05)"
+                  border="1px solid rgba(255,255,255,0.1)"
                   _hover={{ borderColor:'rgba(249,115,22,0.5)', bg:'rgba(255,255,255,0.07)' }}
                   _focus={{ borderColor:'#f97316', bg:'rgba(255,255,255,0.07)', boxShadow:'0 0 0 3px rgba(249,115,22,0.15)' }}
+                  _invalid={{ borderColor:'#f87171', boxShadow:'0 0 0 3px rgba(248,113,113,0.15)' }}
                   color="white" _placeholder={{ color:'rgba(255,255,255,0.2)' }}
                   borderRadius="xl" h={12} fontSize="sm"/>
+                <FormErrorMessage fontSize="xs" color="#f87171" mt={1.5} gap={1.5}>
+                  {/* küçük uyarı ikonu */}
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                    stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                    style={{ flexShrink: 0 }}>
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  {emailError}
+                </FormErrorMessage>
               </FormControl>
 
               {/* Şifre */}
@@ -136,20 +210,27 @@ function LoginPage() {
                   letterSpacing="widest" textTransform="uppercase" mb={1.5}>
                   Şifre
                 </FormLabel>
-                <Box position="relative">
-                  <Input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
+                <InputGroup>
+                  <Input type={showPw ? 'text' : 'password'} value={password}
+                    onChange={e => { setPassword(e.target.value); setError('') }}
                     placeholder="••••••••"
                     bg="rgba(255,255,255,0.05)" border="1px solid rgba(255,255,255,0.1)"
                     _hover={{ borderColor:'rgba(249,115,22,0.5)', bg:'rgba(255,255,255,0.07)' }}
                     _focus={{ borderColor:'#f97316', bg:'rgba(255,255,255,0.07)', boxShadow:'0 0 0 3px rgba(249,115,22,0.15)' }}
                     color="white" _placeholder={{ color:'rgba(255,255,255,0.2)' }}
-                    borderRadius="xl" h={12} fontSize="sm" pr={12}/>
-                  <IconButton aria-label="şifre göster" variant="ghost" size="sm"
-                    color="rgba(255,255,255,0.3)" _hover={{ color:'white', bg:'transparent' }}
-                    icon={<EyeIcon open={showPw}/>}
-                    onClick={() => setShowPw(!showPw)}
-                    position="absolute" right={2} top="50%" transform="translateY(-50%)"/>
-                </Box>
+                    borderRadius="xl" h={12} fontSize="sm"/>
+                  <InputRightElement h="100%" pr={1}>
+                    <button
+                      type="button"
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => setShowPw(v => !v)}
+                      style={{ background:'none', border:'none', cursor:'pointer', padding:6,
+                        color:'rgba(255,255,255,0.4)', display:'flex', alignItems:'center' }}
+                    >
+                      <EyeIcon open={showPw} />
+                    </button>
+                  </InputRightElement>
+                </InputGroup>
               </FormControl>
 
               {/* Giriş butonu */}

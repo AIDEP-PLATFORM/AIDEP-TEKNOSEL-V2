@@ -37,6 +37,9 @@ class User(Base):
     full_name: Mapped[str] = mapped_column(
         String(255), nullable=False
     )
+    tc_no: Mapped[str | None] = mapped_column(
+        String(11), nullable=True
+    )
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="userrole"), nullable=False
     )
@@ -80,8 +83,8 @@ class NgoProfile(Base):
     organization_name: Mapped[str] = mapped_column(
         String(255), nullable=False
     )
-    authorization_number: Mapped[str] = mapped_column(
-        String(100), nullable=False, unique=True
+    authorization_number: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, unique=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

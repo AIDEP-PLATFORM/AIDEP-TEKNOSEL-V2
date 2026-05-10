@@ -10,6 +10,7 @@ import AiPage        from '@/pages/ai/AiPage'
 import ProtectedRoute from '@/components/common/ProtectedRoute'
 import MainLayout    from '@/components/layout/MainLayout'
 import PlaceholderPage from '@/pages/PlaceholderPage'
+import ProfilePage from '@/pages/profile/ProfilePage'
 
 function App() {
   return (
@@ -30,6 +31,7 @@ function App() {
               <Route path="/seismic"    element={<SeismicPage />} />
               <Route path="/ai"         element={<AiPage />} />
               <Route path="/resources"  element={<PlaceholderPage title="Kaynaklar" icon="📦" />} />
+              <Route path="/profile"    element={<ProfilePage />} />
               <Route path="*"           element={<Navigate to="/dashboard" replace />} />
             </Routes>
           </MainLayout>

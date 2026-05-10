@@ -1,11 +1,12 @@
 const TOKEN_KEY   = 'aidep_token'
 const EXPIRY_KEY  = 'aidep_token_expiry'
 const ROLE_KEY    = 'aidep_role'
+const USER_KEY    = 'aidep_user'
 
 // Token süreleri (ms)
 const TOKEN_TTL = 60 * 60 * 1000 // 1 saat
 
-export type UserRole = 'admin' | 'afad' | 'stk' | 'umke'
+export type UserRole = 'admin' | 'afad' | 'stk' | 'umke' | 'NGO' | 'CITIZEN' | 'VOLUNTEER'
 
 // ── Temel token işlemleri ──────────────────────────────────────────
 export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY)
@@ -19,6 +20,24 @@ export const removeToken = (): void => {
   localStorage.removeItem(TOKEN_KEY)
   localStorage.removeItem(EXPIRY_KEY)
   localStorage.removeItem(ROLE_KEY)
+  localStorage.removeItem(USER_KEY)
+}
+
+export interface StoredUser {
+  id: string
+  full_name: string
+  email: string
+  phone: string
+  role: UserRole
+  created_at: string
+}
+
+export const setUser = (user: StoredUser): void =>
+  localStorage.setItem(USER_KEY, JSON.stringify(user))
+
+export const getUser = (): StoredUser | null => {
+  const raw = localStorage.getItem(USER_KEY)
+  return raw ? (JSON.parse(raw) as StoredUser) : null
 }
 
 // ── Expiry kontrolü ───────────────────────────────────────────────
@@ -46,12 +65,12 @@ export const getRole = (): UserRole | null =>
 
 // Belirli rollerin erişebildiği sayfalar
 const ROLE_ACCESS: Record<string, UserRole[]> = {
-  '/dashboard':  ['admin', 'afad', 'stk', 'umke'],
-  '/requests':   ['admin', 'afad', 'stk', 'umke'],
-  '/volunteers': ['admin', 'afad', 'umke'],
-  '/map':        ['admin', 'afad', 'stk', 'umke'],
-  '/resources':  ['admin', 'afad'],
-  '/simulation': ['admin', 'afad', 'stk'],
+  '/dashboard':  ['admin', 'afad', 'stk', 'umke', 'NGO', 'CITIZEN', 'VOLUNTEER'],
+  '/requests':   ['admin', 'afad', 'stk', 'umke', 'NGO', 'CITIZEN', 'VOLUNTEER'],
+  '/volunteers': ['admin', 'afad', 'umke', 'NGO', 'VOLUNTEER'],
+  '/map':        ['admin', 'afad', 'stk', 'umke', 'NGO', 'CITIZEN', 'VOLUNTEER'],
+  '/resources':  ['admin', 'afad', 'NGO'],
+  '/simulation': ['admin', 'afad', 'stk', 'NGO'],
 }
 
 export const canAccess = (path: string): boolean => {

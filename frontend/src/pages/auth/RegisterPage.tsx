@@ -1,11 +1,15 @@
 import {
   Box, Button, Flex, FormControl, FormLabel,
-  Heading, Input, Stack, Text, useToast, IconButton, Link, Select, Grid,
+  Heading, Input, InputGroup, InputRightElement,
+  Stack, Text, Link, Select, Grid,
 } from '@chakra-ui/react'
 import { motion } from 'framer-motion'
 import { useState } from 'react'
 import { useNavigate, Link as RouterLink } from 'react-router-dom'
 import AidepLogo from '@/components/common/AidepLogo'
+import { useCustomToast } from '@/hooks/useCustomToast'
+import { apiRegisterNgo, toInternationalPhone, orgLabel, extractErrorMessage } from '@/services/authService'
+import { setToken, setRole, setUser } from '@/utils/auth'
 
 const MotionBox = motion(Box)
 const MotionStack = motion(Stack)
@@ -57,10 +61,11 @@ function RegisterPage() {
   const [org, setOrg]           = useState('')
   const [password, setPassword] = useState('')
   const [confirm, setConfirm]   = useState('')
-  const [showPw, setShowPw]     = useState(false)
+  const [showPw, setShowPw]       = useState(false)
+  const [showConfirm, setShowConfirm] = useState(false)
   const [loading, setLoading]   = useState(false)
   const navigate = useNavigate()
-  const toast    = useToast()
+  const toast    = useCustomToast()
 
   /* TC formatla: sadece rakam, max 11 */
   const handleTc = (val: string) => {
@@ -78,32 +83,51 @@ function RegisterPage() {
     setPhone(formatted)
   }
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
 
     const tcDigits = tc.replace(/\D/g, '')
     if (tcDigits.length !== 11 || tcDigits[0] === '0') {
-      toast({ title:'Geçersiz TC Kimlik No', description:'11 haneli olmalı ve 0 ile başlamamalıdır.', status:'error', duration:3000, isClosable:true, position:'top' })
+      toast({ title:'Geçersiz TC Kimlik No', description:'11 haneli olmalı ve 0 ile başlamamalıdır.', type:'error' })
       return
     }
 
     const phoneDigits = phone.replace(/\D/g, '')
     if (phoneDigits.length !== 11 || !phoneDigits.startsWith('0')) {
-      toast({ title:'Geçersiz telefon numarası', description:'05XX XXX XX XX formatında giriniz.', status:'error', duration:3000, isClosable:true, position:'top' })
+      toast({ title:'Geçersiz telefon numarası', description:'05XX XXX XX XX formatında giriniz.', type:'error' })
       return
     }
 
     if (password !== confirm) {
-      toast({ title:'Şifreler eşleşmiyor', status:'error', duration:3000, isClosable:true, position:'top' })
+      toast({ title:'Şifreler eşleşmiyor', type:'error' })
+      return
+    }
+
+    if (!org) {
+      toast({ title:'Kurum seçiniz', type:'error' })
       return
     }
 
     setLoading(true)
-    setTimeout(() => {
-      toast({ title:'Kayıt başarılı', description:'Giriş yapabilirsiniz.', status:'success', duration:3000, isClosable:true, position:'top' })
-      navigate('/login')
+    try {
+      const res = await apiRegisterNgo({
+        email,
+        phone: toInternationalPhone(phone),
+        password,
+        full_name: fullName,
+        tc_no: tcDigits,
+        organization_name: orgLabel(org),
+      })
+      setToken(res.access_token)
+      setRole(res.user.role)
+      setUser(res.user)
+      toast({ title:'Kayıt başarılı', description:'Hoş geldiniz!', type:'success' })
+      navigate('/dashboard')
+    } catch (err: unknown) {
+      toast({ title:'Kayıt Hatası', description: extractErrorMessage(err), type:'error', duration: 5000 })
+    } finally {
       setLoading(false)
-    }, 800)
+    }
   }
 
   return (
@@ -225,25 +249,43 @@ function RegisterPage() {
               <Grid templateColumns="1fr 1fr" gap={3}>
                 <FormControl isRequired>
                   <FormLabel {...labelStyle}>Şifre</FormLabel>
-                  <Box position="relative">
+                  <InputGroup>
                     <Input type={showPw ? 'text' : 'password'} value={password}
                       onChange={e => setPassword(e.target.value)}
-                      placeholder="••••••••" {...inputStyle} pr={10}/>
-                    <IconButton aria-label="şifre" variant="ghost" size="sm"
-                      color="rgba(255,255,255,0.3)" _hover={{ color:'white', bg:'transparent' }}
-                      icon={<EyeIcon open={showPw}/>} onClick={() => setShowPw(!showPw)}
-                      position="absolute" right={1} top="50%" transform="translateY(-50%)"/>
-                  </Box>
+                      placeholder="••••••••" {...inputStyle}/>
+                    <InputRightElement h="100%" pr={1}>
+                      <button
+                        type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => setShowPw(v => !v)}
+                        style={{ background:'none', border:'none', cursor:'pointer', padding:6,
+                          color:'rgba(255,255,255,0.4)', display:'flex', alignItems:'center' }}
+                      >
+                        <EyeIcon open={showPw} />
+                      </button>
+                    </InputRightElement>
+                  </InputGroup>
                 </FormControl>
 
                 <FormControl isRequired>
                   <FormLabel {...labelStyle}>Şifre Tekrar</FormLabel>
-                  <Box position="relative">
-                    <Input type={showPw ? 'text' : 'password'} value={confirm}
+                  <InputGroup>
+                    <Input type={showConfirm ? 'text' : 'password'} value={confirm}
                       onChange={e => setConfirm(e.target.value)}
                       placeholder="••••••••" {...inputStyle}
                       isInvalid={confirm.length > 0 && confirm !== password}/>
-                  </Box>
+                    <InputRightElement h="100%" pr={1}>
+                      <button
+                        type="button"
+                        onMouseDown={e => e.preventDefault()}
+                        onClick={() => setShowConfirm(v => !v)}
+                        style={{ background:'none', border:'none', cursor:'pointer', padding:6,
+                          color:'rgba(255,255,255,0.4)', display:'flex', alignItems:'center' }}
+                      >
+                        <EyeIcon open={showConfirm} />
+                      </button>
+                    </InputRightElement>
+                  </InputGroup>
                   {confirm.length > 0 && confirm !== password && (
                     <Text fontSize="10px" color="#f87171" mt={1}>Şifreler eşleşmiyor</Text>
                   )}
