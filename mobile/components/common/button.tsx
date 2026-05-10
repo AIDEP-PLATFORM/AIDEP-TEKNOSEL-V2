@@ -30,7 +30,7 @@ export function Button({ title, onPress, loading, disabled, variant = 'primary',
 const styles = StyleSheet.create({
   base: { padding: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   primary: { backgroundColor: Colors.primary },
-  secondary: { backgroundColor: Colors.secondary },
+  secondary: { backgroundColor: Colors.surfaceSolid, borderWidth: 1, borderColor: Colors.borderLight },
   danger: { backgroundColor: Colors.error },
   disabled: { opacity: 0.5 },
   text: { color: '#fff', fontWeight: '600', fontSize: 16 },

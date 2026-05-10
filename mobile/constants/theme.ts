@@ -1,37 +1,55 @@
 import { Platform } from 'react-native';
 
 export const Colors = {
-  // Marka renkleri
-  primary: '#E63946',     // Acil kırmızı - AIDEP ana rengi
-  primaryLight: '#FF6B6B',
-  secondary: '#1D3557',   // Koyu lacivert
-  accent: '#457B9D',      // Mavi
+  // Arka planlar
+  background: '#0a1628',
+  backgroundGradient: ['#0a1628', '#0e2137', '#0a1e2e'] as string[],
+  surface: 'rgba(14,33,55,0.7)',
+  surfaceSolid: '#0e2137',
+  sidebar: '#0a1628',
+
+  // Primary — logo teal
+  primary: '#06b6d4',
+  primaryDark: '#0e7490',
+  primaryLight: '#67e8f9',
+
+  // Accent — logo orange (güvenli rota oku)
+  accent: '#f97316',
+  accentLight: '#fdba74',
 
   // Durum renkleri
-  success: '#2A9D8F',
-  warning: '#E9C46A',
-  error: '#E63946',
+  critical: '#ef4444',
+  criticalLight: '#fca5a5',
+  high: '#f97316',
+  highLight: '#fdba74',
+  medium: '#facc15',
+  mediumLight: '#fde68a',
+  success: '#22c55e',
+  successLight: '#86efac',
 
   // Hasar seviyeleri
-  damageNone: '#2A9D8F',
-  damageLow: '#E9C46A',
-  damageMedium: '#F4A261',
-  damageHigh: '#E76F51',
-  damageCritical: '#E63946',
+  damageNone: '#22c55e',
+  damageLow: '#facc15',
+  damageMedium: '#f97316',
+  damageHigh: '#ef4444',
+  damageCritical: '#7f1d1d',
 
-  // Rota güvenlik renkleri
-  routeSafe: '#2A9D8F',
-  routeRisky: '#E9C46A',
-  routeBlocked: '#E63946',
+  // Rota
+  routeSafe: '#06b6d4',
+  routeRisky: '#facc15',
+  routeBlocked: '#ef4444',
 
-  // UI renkleri
-  background: '#F8F9FA',
-  surface: '#FFFFFF',
-  border: '#DEE2E6',
-  text: '#212529',
-  textSecondary: '#6C757D',
-  textLight: '#ADB5BD',
-  white: '#FFFFFF',
+  // Yazı
+  text: '#f1f5f9',
+  textSecondary: 'rgba(255,255,255,0.6)',
+  textMuted: 'rgba(255,255,255,0.3)',
+
+  // Kenarlık
+  border: 'rgba(6,182,212,0.15)',
+  borderLight: 'rgba(6,182,212,0.25)',
+
+  white: '#ffffff',
+  error: '#ef4444',
 };
 
 export const Spacing = {

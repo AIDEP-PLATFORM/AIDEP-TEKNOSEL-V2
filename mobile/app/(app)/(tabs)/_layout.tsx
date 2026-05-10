@@ -1,22 +1,9 @@
 import { Tabs } from 'expo-router';
+import { View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/theme';
 
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
-
-interface TabConfig {
-  name: string;
-  title: string;
-  icon: IoniconName;
-  iconFocused: IoniconName;
-}
-
-const TABS: TabConfig[] = [
-  { name: 'home', title: 'Ana Sayfa', icon: 'home-outline', iconFocused: 'home' },
-  { name: 'map', title: 'Harita', icon: 'map-outline', iconFocused: 'map' },
-  { name: 'tasks', title: 'Görevler', icon: 'list-outline', iconFocused: 'list' },
-  { name: 'profile', title: 'Profil', icon: 'person-outline', iconFocused: 'person' },
-];
 
 export default function TabLayout() {
   return (
@@ -26,27 +13,45 @@ export default function TabLayout() {
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textSecondary,
         tabBarStyle: {
-          backgroundColor: Colors.surface,
+          backgroundColor: '#0e2137',
           borderTopColor: Colors.border,
+          height: 60,
+          paddingBottom: 8,
+          paddingTop: 4,
         },
       }}
     >
-      {TABS.map((tab) => (
-        <Tabs.Screen
-          key={tab.name}
-          name={tab.name}
-          options={{
-            title: tab.title,
-            tabBarIcon: ({ focused, color, size }) => (
-              <Ionicons
-                name={focused ? tab.iconFocused : tab.icon}
-                size={size}
-                color={color}
-              />
-            ),
-          }}
-        />
-      ))}
+      <Tabs.Screen
+        name="home"
+        options={{
+          title: 'Ana Sayfa',
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'home' : 'home-outline'} size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="map"
+        options={{
+          title: 'Harita',
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'map' : 'map-outline'} size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="report"
+        options={{
+          title: 'Hasar Raporla',
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'warning' : 'warning-outline'} size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen name="tasks" options={{ href: null }} />
+      <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({});
