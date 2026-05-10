@@ -91,6 +91,7 @@ async def register_citizen(db: AsyncSession, data: CitizenRegisterRequest) -> Us
         phone=data.phone,
         password_hash=hash_password(data.password),
         full_name=data.full_name,
+        tc_no=getattr(data, "tc_no", None),
         role=UserRole.CITIZEN,
     )
     db.add(user)
@@ -109,6 +110,7 @@ async def register_volunteer(db: AsyncSession, data: VolunteerRegisterRequest) -
         phone=data.phone,
         password_hash=hash_password(data.password),
         full_name=data.full_name,
+        tc_no=getattr(data, "tc_no", None),
         role=UserRole.VOLUNTEER,
     )
     db.add(user)
@@ -130,15 +132,16 @@ async def register_volunteer(db: AsyncSession, data: VolunteerRegisterRequest) -
 async def register_ngo(db: AsyncSession, data: NgoRegisterRequest) -> User:
     await _check_email_phone(db, data.email, data.phone)
 
-    # Yetki numarası daha önce alınmış mı?
-    existing = await db.execute(
-        select(NgoProfile).where(NgoProfile.authorization_number == data.authorization_number)
-    )
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Bu yetki numarası zaten kayıtlı",
+    # Yetki numarası verilmişse daha önce alınmış mı kontrol et
+    if data.authorization_number:
+        existing = await db.execute(
+            select(NgoProfile).where(NgoProfile.authorization_number == data.authorization_number)
         )
+        if existing.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Bu yetki numarası zaten kayıtlı",
+            )
 
     user = User(
         id=uuid4(),
@@ -146,6 +149,7 @@ async def register_ngo(db: AsyncSession, data: NgoRegisterRequest) -> User:
         phone=data.phone,
         password_hash=hash_password(data.password),
         full_name=data.full_name,
+        tc_no=getattr(data, "tc_no", None),
         role=UserRole.NGO,
     )
     db.add(user)
@@ -155,7 +159,7 @@ async def register_ngo(db: AsyncSession, data: NgoRegisterRequest) -> User:
         id=uuid4(),
         user_id=user.id,
         organization_name=data.organization_name,
-        authorization_number=data.authorization_number,
+        authorization_number=data.authorization_number or None,
     )
     db.add(profile)
     await db.commit()
