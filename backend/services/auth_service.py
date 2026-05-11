@@ -11,11 +11,17 @@ from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status
 
 from core.config import settings
-from models.user import User, VolunteerProfile, NgoProfile, UserRole
+from core.constants import WEB_ALLOWED_ROLES
+from models.user import (
+    User, VolunteerProfile, NgoManagerProfile,
+    NgoStaffProfile, OfficialProfile, Organization, UserRole,
+)
 from schemas.auth import (
-    CitizenRegisterRequest,
-    VolunteerRegisterRequest,
-    NgoRegisterRequest,
+    RegisterRequest,
+    NgoManagerRegisterRequest,
+    NgoStaffRegisterRequest,
+    OfficialRegisterRequest,
+    SkillsUpdateRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,21 +50,16 @@ def create_access_token(user_id: str) -> str:
 
 
 def decode_token(token: str) -> str:
-    """Token'ı çöz, user_id döndür. Hatalıysa exception fırlat."""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         user_id: Optional[str] = payload.get("sub")
         if user_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Geçersiz token",
-            )
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                                detail="Geçersiz token")
         return user_id
     except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Geçersiz veya süresi dolmuş token",
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail="Geçersiz veya süresi dolmuş token")
 
 
 # ─── Kullanıcı Sorguları ────────────────────────────────────────
@@ -73,104 +74,181 @@ async def get_user_by_id(db: AsyncSession, user_id: str) -> Optional[User]:
         select(User)
         .where(User.id == user_id)
         .options(
-            selectinload(User.volunteer_profile),
-            selectinload(User.ngo_profile),
+            selectinload(User.volunteer_profile).selectinload(VolunteerProfile.organization),
+            selectinload(User.ngo_manager_profile).selectinload(NgoManagerProfile.organization),
+            selectinload(User.ngo_staff_profile).selectinload(NgoStaffProfile.organization),
+            selectinload(User.official_profile).selectinload(OfficialProfile.organization),
         )
     )
     return result.scalar_one_or_none()
 
 
-# ─── Kayıt ─────────────────────────────────────────────────────
+# ─── Kayıt: Vatandaş / Gönüllü ─────────────────────────────────
 
-async def register_citizen(db: AsyncSession, data: CitizenRegisterRequest) -> User:
+async def register_user(db: AsyncSession, data: RegisterRequest) -> User:
     await _check_email_phone(db, data.email, data.phone)
 
-    user = User(
-        id=uuid4(),
-        email=data.email,
-        phone=data.phone,
-        password_hash=hash_password(data.password),
-        full_name=data.full_name,
-        tc_no=getattr(data, "tc_no", None),
-        role=UserRole.CITIZEN,
-    )
-    db.add(user)
-    await db.commit()
-    await db.refresh(user)
-    logger.info(f"Yeni vatandas kaydi: {user.email}")
-    return user
-
-
-async def register_volunteer(db: AsyncSession, data: VolunteerRegisterRequest) -> User:
-    await _check_email_phone(db, data.email, data.phone)
+    if data.organization_id:
+        await _check_organization_exists(db, data.organization_id)
+        role = UserRole.VOLUNTEER
+    else:
+        role = UserRole.CITIZEN
 
     user = User(
-        id=uuid4(),
-        email=data.email,
-        phone=data.phone,
+        id=uuid4(), email=data.email, phone=data.phone,
         password_hash=hash_password(data.password),
-        full_name=data.full_name,
-        tc_no=getattr(data, "tc_no", None),
-        role=UserRole.VOLUNTEER,
-    )
-    db.add(user)
-    await db.flush()  # user.id'yi al
-
-    profile = VolunteerProfile(
-        id=uuid4(),
-        user_id=user.id,
-        skills=data.skills,
-        preferred_ngo_id=data.preferred_ngo_id,
-    )
-    db.add(profile)
-    await db.commit()
-    await db.refresh(user)
-    logger.info(f"Yeni gonullu kaydi: {user.email}")
-    return user
-
-
-async def register_ngo(db: AsyncSession, data: NgoRegisterRequest) -> User:
-    await _check_email_phone(db, data.email, data.phone)
-
-    # Yetki numarası verilmişse daha önce alınmış mı kontrol et
-    if data.authorization_number:
-        existing = await db.execute(
-            select(NgoProfile).where(NgoProfile.authorization_number == data.authorization_number)
-        )
-        if existing.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Bu yetki numarası zaten kayıtlı",
-            )
-
-    user = User(
-        id=uuid4(),
-        email=data.email,
-        phone=data.phone,
-        password_hash=hash_password(data.password),
-        full_name=data.full_name,
-        tc_no=getattr(data, "tc_no", None),
-        role=UserRole.NGO,
+        full_name=data.full_name, tc_no=data.tc_no,
+        role=role, is_active=True,
     )
     db.add(user)
     await db.flush()
 
-    profile = NgoProfile(
-        id=uuid4(),
-        user_id=user.id,
-        organization_name=data.organization_name,
-        authorization_number=data.authorization_number or None,
-    )
-    db.add(profile)
+    if role == UserRole.VOLUNTEER:
+        db.add(VolunteerProfile(
+            id=uuid4(), user_id=user.id,
+            organization_id=data.organization_id,
+            skills=[], skills_completed=False,
+        ))
+        logger.info(f"Yeni gönüllü: {user.email} → org={data.organization_id}")
+    else:
+        logger.info(f"Yeni vatandaş: {user.email}")
+
     await db.commit()
     await db.refresh(user)
-    logger.info(f"Yeni STK kaydi: {user.email} / {data.organization_name}")
     return user
+
+
+# ─── Kayıt: STK Yönetim Görevlisi ──────────────────────────────
+
+async def register_ngo_manager(db: AsyncSession, data: NgoManagerRegisterRequest) -> User:
+    await _check_email_phone(db, data.email, data.phone)
+    await _check_organization_exists(db, data.organization_id)
+
+    user = User(
+        id=uuid4(), email=data.email, phone=data.phone,
+        password_hash=hash_password(data.password),
+        full_name=data.full_name, tc_no=data.tc_no,
+        role=UserRole.NGO_MANAGER, is_active=False,
+    )
+    db.add(user)
+    await db.flush()
+
+    db.add(NgoManagerProfile(
+        id=uuid4(), user_id=user.id,
+        organization_id=data.organization_id,
+        activity_areas=data.activity_areas,
+        address=data.address,
+    ))
+    await db.commit()
+    await db.refresh(user)
+    logger.info(f"Yeni NGO yöneticisi (onay bekliyor): {user.email}")
+    return user
+
+
+# ─── Kayıt: STK Saha Görevlisi ─────────────────────────────────
+
+async def register_ngo_staff(db: AsyncSession, data: NgoStaffRegisterRequest) -> User:
+    await _check_email_phone(db, data.email, data.phone)
+    await _check_organization_exists(db, data.organization_id)
+
+    user = User(
+        id=uuid4(), email=data.email, phone=data.phone,
+        password_hash=hash_password(data.password),
+        full_name=data.full_name, tc_no=data.tc_no,
+        role=UserRole.NGO_STAFF, is_active=False,
+    )
+    db.add(user)
+    await db.flush()
+
+    db.add(NgoStaffProfile(
+        id=uuid4(), user_id=user.id,
+        organization_id=data.organization_id,
+    ))
+    await db.commit()
+    await db.refresh(user)
+    logger.info(f"Yeni saha görevlisi (onay bekliyor): {user.email}")
+    return user
+
+
+# ─── Kayıt: Resmi Kurum Çalışanı ───────────────────────────────
+
+async def register_official(db: AsyncSession, data: OfficialRegisterRequest) -> User:
+    """Sicil no başı '1' → OFFICIAL_MANAGER (web+mobil)
+    Sicil no başı ≠'1' → OFFICIAL_STAFF (sadece mobil)
+    Onay gerekmez — sicil numarası yeterli.
+    """
+    await _check_email_phone(db, data.email, data.phone)
+    await _check_organization_exists(db, data.organization_id)
+
+    # Sicil numarası benzersizlik kontrolü
+    existing = await db.execute(
+        select(OfficialProfile).where(
+            OfficialProfile.registration_number == data.registration_number
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Bu sicil numarası zaten kayıtlı",
+        )
+
+    role = (
+        UserRole.OFFICIAL_MANAGER
+        if data.registration_number.startswith("1")
+        else UserRole.OFFICIAL_STAFF
+    )
+
+    user = User(
+        id=uuid4(), email=data.email, phone=data.phone,
+        password_hash=hash_password(data.password),
+        full_name=data.full_name, tc_no=data.tc_no,
+        role=role, is_active=True,
+    )
+    db.add(user)
+    await db.flush()
+
+    db.add(OfficialProfile(
+        id=uuid4(), user_id=user.id,
+        organization_id=data.organization_id,
+        registration_number=data.registration_number,
+        address=data.address,
+    ))
+    await db.commit()
+    await db.refresh(user)
+    logger.info(
+        f"Yeni resmi {'yetkili' if role == UserRole.OFFICIAL_MANAGER else 'personel'}: "
+        f"{user.email} sicil={data.registration_number}"
+    )
+    return user
+
+
+# ─── Beceri Güncelleme ──────────────────────────────────────────
+
+async def update_volunteer_skills(
+    db: AsyncSession, user: User, data: SkillsUpdateRequest
+) -> VolunteerProfile:
+    if user.role != UserRole.VOLUNTEER or not user.volunteer_profile:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Bu işlem sadece gönüllüler için geçerlidir",
+        )
+    profile = user.volunteer_profile
+    profile.skills = data.skills
+    profile.skills_completed = True
+    await db.commit()
+    await db.refresh(profile)
+    logger.info(f"Gönüllü becerileri güncellendi: {user.email}")
+    return profile
 
 
 # ─── Giriş ─────────────────────────────────────────────────────
 
-async def login(db: AsyncSession, email: str, password: str) -> tuple[User, str]:
+async def login(
+    db: AsyncSession,
+    email: str,
+    password: str,
+    platform: str = "mobile",
+) -> tuple[User, str]:
     user = await get_user_by_email(db, email)
     if not user or not verify_password(password, user.password_hash):
         raise HTTPException(
@@ -180,7 +258,12 @@ async def login(db: AsyncSession, email: str, password: str) -> tuple[User, str]
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Hesap devre dışı",
+            detail="Hesabınız onay bekliyor",
+        )
+    if platform == "web" and user.role not in WEB_ALLOWED_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Web girişi bu hesap türü için kullanılamaz",
         )
     token = create_access_token(str(user.id))
     return user, token
@@ -189,15 +272,14 @@ async def login(db: AsyncSession, email: str, password: str) -> tuple[User, str]
 # ─── Yardımcı ───────────────────────────────────────────────────
 
 async def _check_email_phone(db: AsyncSession, email: str, phone: str) -> None:
-    existing_email = await db.execute(select(User).where(User.email == email))
-    if existing_email.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Bu e-posta zaten kayıtlı",
-        )
-    existing_phone = await db.execute(select(User).where(User.phone == phone))
-    if existing_phone.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Bu telefon numarası zaten kayıtlı",
-        )
+    if (await db.execute(select(User).where(User.email == email))).scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Bu e-posta zaten kayıtlı")
+    if (await db.execute(select(User).where(User.phone == phone))).scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Bu telefon numarası zaten kayıtlı")
+
+
+async def _check_organization_exists(db: AsyncSession, org_id) -> None:
+    if not (await db.execute(
+        select(Organization).where(Organization.id == org_id)
+    )).scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Seçilen kurum şubesi bulunamadı")

@@ -1,3 +1,21 @@
-from models.user import User, VolunteerProfile, NgoProfile, UserRole
+from models.user import (
+    User,
+    Organization,
+    OrgType,
+    VolunteerProfile,
+    NgoManagerProfile,
+    NgoStaffProfile,
+    OfficialProfile,
+    UserRole,
+)
 
-__all__ = ["User", "VolunteerProfile", "NgoProfile", "UserRole"]
+__all__ = [
+    "User",
+    "Organization",
+    "OrgType",
+    "VolunteerProfile",
+    "NgoManagerProfile",
+    "NgoStaffProfile",
+    "OfficialProfile",
+    "UserRole",
+]

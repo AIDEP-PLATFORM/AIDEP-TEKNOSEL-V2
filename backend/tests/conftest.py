@@ -29,26 +29,25 @@ app.dependency_overrides[get_db] = override_get_db
 
 
 def _sync_cleanup():
-    """Test verilerini psycopg2 ile temizle (event loop bağımsız)"""
+    """Test verilerini psycopg2 ile temizle."""
     conn = psycopg2.connect(settings.DATABASE_URL)
     conn.autocommit = True
     cur = conn.cursor()
-    cur.execute(
-        "DELETE FROM volunteer_profiles WHERE user_id IN "
-        "(SELECT id FROM users WHERE email LIKE '%@aideptest.com')"
-    )
-    cur.execute(
-        "DELETE FROM ngo_profiles WHERE user_id IN "
-        "(SELECT id FROM users WHERE email LIKE '%@aideptest.com')"
-    )
+
+    test_filter = "user_id IN (SELECT id FROM users WHERE email LIKE '%@aideptest.com')"
+    cur.execute(f"DELETE FROM volunteer_profiles WHERE {test_filter}")
+    cur.execute(f"DELETE FROM ngo_manager_profiles WHERE {test_filter}")
+    cur.execute(f"DELETE FROM ngo_staff_profiles WHERE {test_filter}")
+    cur.execute(f"DELETE FROM official_profiles WHERE {test_filter}")
     cur.execute("DELETE FROM users WHERE email LIKE '%@aideptest.com'")
+    cur.execute("DELETE FROM organizations")
+
     cur.close()
     conn.close()
 
 
 @pytest_asyncio.fixture(scope="session")
 async def client():
-    """Session boyunca tek client — tüm testler aynı event loop'ta çalışır"""
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
@@ -59,6 +58,5 @@ async def client():
 
 @pytest.fixture(autouse=True)
 def cleanup_between_tests():
-    """Her testten önce temizle (önceki testten kalan veri varsa)"""
     _sync_cleanup()
     yield

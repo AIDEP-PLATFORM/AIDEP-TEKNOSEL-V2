@@ -3,6 +3,13 @@ from httpx import AsyncClient
 
 pytestmark = pytest.mark.asyncio
 
+NGO_BASE = {
+    "tc_no": "12345678901",
+    "password": "test123",
+    "password_confirm": "test123",
+    "full_name": "STK Yetkili",
+}
+
 
 async def test_list_ngos_empty(client: AsyncClient):
     res = await client.get("/ngos")
@@ -12,10 +19,9 @@ async def test_list_ngos_empty(client: AsyncClient):
 
 async def test_list_ngos_after_register(client: AsyncClient):
     await client.post("/auth/register/ngo", json={
+        **NGO_BASE,
         "email": "listtest@aideptest.com",
         "phone": "+905550000050",
-        "password": "test123",
-        "full_name": "STK Yetkili",
         "organization_name": "Kizilav Test",
         "authorization_number": "STK-LIST-001",
     })
@@ -27,10 +33,9 @@ async def test_list_ngos_after_register(client: AsyncClient):
 
 async def test_ngo_list_item_has_id_and_name(client: AsyncClient):
     await client.post("/auth/register/ngo", json={
+        **NGO_BASE,
         "email": "fields@aideptest.com",
         "phone": "+905550000051",
-        "password": "test123",
-        "full_name": "STK Yetkili",
         "organization_name": "Fields Test STK",
         "authorization_number": "STK-FIELDS-001",
     })

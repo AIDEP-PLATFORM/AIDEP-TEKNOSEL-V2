@@ -16,8 +16,57 @@ from core.database import Base
 class UserRole(str, enum.Enum):
     CITIZEN = "CITIZEN"
     VOLUNTEER = "VOLUNTEER"
-    NGO = "NGO"
+    NGO_MANAGER = "NGO_MANAGER"       # STK yönetim görevlisi — admin onaylar
+    NGO_STAFF = "NGO_STAFF"           # STK saha görevlisi — yönetici onaylar
+    OFFICIAL_MANAGER = "OFFICIAL_MANAGER"  # Resmi yetkili (sicil başı 1) — web+mobil
+    OFFICIAL_STAFF = "OFFICIAL_STAFF"     # Resmi personel (sicil başı ≠1) — sadece mobil
+    ADMIN = "ADMIN"
 
+
+class OrgType(str, enum.Enum):
+    STK = "STK"           # AKUT, Kızılay (gönüllü bazlı)
+    OFFICIAL = "OFFICIAL" # AFAD, UMKE, Kızılay resmi (devlet kurumu)
+
+
+# ─── Organization (Kurum Şubesi) ────────────────────────────────
+# Admin panelinden eklenir. Her kayıt tek bir şubeyi temsil eder.
+# Örn: AKUT / Konya / Selçuklu  ya da  AFAD / Konya / Selçuklu
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    city: Mapped[str] = mapped_column(String(100), nullable=False)
+    district: Mapped[str] = mapped_column(String(100), nullable=False)
+    org_type: Mapped[OrgType] = mapped_column(
+        Enum(OrgType, name="orgtype"), nullable=False, default=OrgType.STK
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Relationships
+    ngo_manager_profiles: Mapped[list["NgoManagerProfile"]] = relationship(
+        "NgoManagerProfile", back_populates="organization"
+    )
+    ngo_staff_profiles: Mapped[list["NgoStaffProfile"]] = relationship(
+        "NgoStaffProfile", back_populates="organization"
+    )
+    volunteers: Mapped[list["VolunteerProfile"]] = relationship(
+        "VolunteerProfile", back_populates="organization"
+    )
+    official_profiles: Mapped[list["OfficialProfile"]] = relationship(
+        "OfficialProfile", back_populates="organization"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Organization {self.org_type} {self.name}/{self.city}/{self.district}>"
+
+
+# ─── User ───────────────────────────────────────────────────────
 
 class User(Base):
     __tablename__ = "users"
@@ -58,18 +107,30 @@ class User(Base):
 
     # Relationships
     volunteer_profile: Mapped["VolunteerProfile"] = relationship(
-        "VolunteerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
+        "VolunteerProfile", back_populates="user",
+        uselist=False, cascade="all, delete-orphan"
     )
-    ngo_profile: Mapped["NgoProfile"] = relationship(
-        "NgoProfile", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    ngo_manager_profile: Mapped["NgoManagerProfile"] = relationship(
+        "NgoManagerProfile", back_populates="user",
+        uselist=False, cascade="all, delete-orphan"
+    )
+    ngo_staff_profile: Mapped["NgoStaffProfile"] = relationship(
+        "NgoStaffProfile", back_populates="user",
+        uselist=False, cascade="all, delete-orphan"
+    )
+    official_profile: Mapped["OfficialProfile"] = relationship(
+        "OfficialProfile", back_populates="user",
+        uselist=False, cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
         return f"<User id={self.id} email={self.email} role={self.role}>"
 
 
-class NgoProfile(Base):
-    __tablename__ = "ngo_profiles"
+# ─── NgoManagerProfile ──────────────────────────────────────────
+
+class NgoManagerProfile(Base):
+    __tablename__ = "ngo_manager_profiles"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
@@ -77,28 +138,94 @@ class NgoProfile(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
-        unique=True,
+        unique=True, nullable=False,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
         nullable=False,
     )
-    organization_name: Mapped[str] = mapped_column(
-        String(255), nullable=False
+    activity_areas: Mapped[list[str]] = mapped_column(
+        ARRAY(String), default=list, nullable=False
     )
-    authorization_number: Mapped[str | None] = mapped_column(
-        String(100), nullable=True, unique=True
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="ngo_manager_profile")
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="ngo_manager_profiles"
+    )
+
+
+# ─── NgoStaffProfile ────────────────────────────────────────────
+
+class NgoStaffProfile(Base):
+    __tablename__ = "ngo_staff_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True, nullable=False,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="ngo_profile")
-    volunteers: Mapped[list["VolunteerProfile"]] = relationship(
-        "VolunteerProfile", back_populates="preferred_ngo"
+    user: Mapped["User"] = relationship("User", back_populates="ngo_staff_profile")
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="ngo_staff_profiles"
+    )
+
+
+# ─── OfficialProfile ────────────────────────────────────────────
+# AFAD, UMKE gibi resmi kurum çalışanları.
+# Sicil no başı '1' → OFFICIAL_MANAGER (web+mobil)
+# Sicil no başı ≠'1' → OFFICIAL_STAFF (sadece mobil)
+
+class OfficialProfile(Base):
+    __tablename__ = "official_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        unique=True, nullable=False,
+    )
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    registration_number: Mapped[str] = mapped_column(
+        String(10), unique=True, nullable=False
+    )
+    address: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="official_profile")
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="official_profiles"
     )
 
     def __repr__(self) -> str:
-        return f"<NgoProfile id={self.id} org={self.organization_name}>"
+        return f"<OfficialProfile user_id={self.user_id} reg={self.registration_number}>"
 
+
+# ─── VolunteerProfile ───────────────────────────────────────────
 
 class VolunteerProfile(Base):
     __tablename__ = "volunteer_profiles"
@@ -109,11 +236,19 @@ class VolunteerProfile(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
-        unique=True,
-        nullable=False,
+        unique=True, nullable=False,
+    )
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="SET NULL",
+                   name="fk_volunteer_organization"),
+        nullable=True,
     )
     skills: Mapped[list[str]] = mapped_column(
         ARRAY(String), default=list, nullable=False
+    )
+    skills_completed: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
     )
     is_available: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False
@@ -121,20 +256,11 @@ class VolunteerProfile(Base):
     active_task_count: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False
     )
-    preferred_ngo_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("ngo_profiles.id", ondelete="SET NULL", use_alter=True, name="fk_volunteer_preferred_ngo"),
-        nullable=True,
-    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
-    # Relationships
     user: Mapped["User"] = relationship("User", back_populates="volunteer_profile")
-    preferred_ngo: Mapped["NgoProfile"] = relationship(
-        "NgoProfile", back_populates="volunteers"
+    organization: Mapped["Organization"] = relationship(
+        "Organization", back_populates="volunteers"
     )
-
-    def __repr__(self) -> str:
-        return f"<VolunteerProfile id={self.id} user_id={self.user_id}>"
