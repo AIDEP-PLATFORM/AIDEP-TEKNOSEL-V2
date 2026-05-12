@@ -92,7 +92,7 @@ function LoginPage() {
     setError('')          // her denemede temizle
     setLoading(true)
     try {
-      const res = await apiLogin({ email, password })
+      const res = await apiLogin({ email, password, platform: 'web' })
       setToken(res.access_token)
       setRole(res.user.role)
       setUser(res.user)
@@ -184,13 +184,13 @@ function LoginPage() {
                   }}
                   onBlur={e => setEmailError(validateEmail(e.target.value))} // odak ayrılınca kontrol
                   placeholder="ornek@afad.gov.tr"
-                  bg="rgba(255,255,255,0.05)"
-                  border="1px solid rgba(255,255,255,0.1)"
-                  _hover={{ borderColor:'rgba(249,115,22,0.5)', bg:'rgba(255,255,255,0.07)' }}
-                  _focus={{ borderColor:'#f97316', bg:'rgba(255,255,255,0.07)', boxShadow:'0 0 0 3px rgba(249,115,22,0.15)' }}
-                  _invalid={{ borderColor:'#f87171', boxShadow:'0 0 0 3px rgba(248,113,113,0.15)' }}
+                  bg="rgba(255,255,255,0.04)"
+                  border="1px solid rgba(255,255,255,0.08)"
+                  _hover={{ borderColor:'rgba(249,115,22,0.45)' }}
+                  _focus={{ borderColor:'#f97316', bg:'rgba(255,255,255,0.06)', boxShadow:'0 0 0 3px rgba(249,115,22,0.12)' }}
+                  _invalid={{ borderColor:'#f87171', boxShadow:'0 0 0 3px rgba(248,113,113,0.12)' }}
                   color="white" _placeholder={{ color:'rgba(255,255,255,0.2)' }}
-                  borderRadius="xl" h={12} fontSize="sm"/>
+                  borderRadius="xl" h={10} fontSize="sm"/>
                 <FormErrorMessage fontSize="xs" color="#f87171" mt={1.5} gap={1.5}>
                   {/* küçük uyarı ikonu */}
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
@@ -214,11 +214,11 @@ function LoginPage() {
                   <Input type={showPw ? 'text' : 'password'} value={password}
                     onChange={e => { setPassword(e.target.value); setError('') }}
                     placeholder="••••••••"
-                    bg="rgba(255,255,255,0.05)" border="1px solid rgba(255,255,255,0.1)"
-                    _hover={{ borderColor:'rgba(249,115,22,0.5)', bg:'rgba(255,255,255,0.07)' }}
-                    _focus={{ borderColor:'#f97316', bg:'rgba(255,255,255,0.07)', boxShadow:'0 0 0 3px rgba(249,115,22,0.15)' }}
+                    bg="rgba(255,255,255,0.04)" border="1px solid rgba(255,255,255,0.08)"
+                    _hover={{ borderColor:'rgba(249,115,22,0.45)' }}
+                    _focus={{ borderColor:'#f97316', bg:'rgba(255,255,255,0.06)', boxShadow:'0 0 0 3px rgba(249,115,22,0.12)' }}
                     color="white" _placeholder={{ color:'rgba(255,255,255,0.2)' }}
-                    borderRadius="xl" h={12} fontSize="sm"/>
+                    borderRadius="xl" h={10} fontSize="sm"/>
                   <InputRightElement h="100%" pr={1}>
                     <button
                       type="button"
@@ -236,7 +236,7 @@ function LoginPage() {
               {/* Giriş butonu */}
               <MotionBox whileHover={{ scale:1.02 } as any} whileTap={{ scale:0.97 } as any} mt={1}>
                 <Button type="submit" isLoading={loading} loadingText="Giriş yapılıyor..."
-                  w="full" h={12}
+                  w="full" h={10}
                   bg="linear-gradient(135deg,#dc2626,#ea580c)"
                   color="white" fontWeight="700" fontSize="sm" borderRadius="xl" border="none"
                   _hover={{ opacity:0.9, boxShadow:'0 0 32px rgba(220,38,38,0.5)' }}

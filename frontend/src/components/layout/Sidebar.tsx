@@ -20,25 +20,26 @@ const Icons = {
 }
 
 const mainNav = [
-  { label: 'Dashboard',  icon: Icons.dashboard,  path: '/dashboard', badge: null },
-  { label: 'Talepler',   icon: Icons.requests,   path: '/requests',  badge: 24   },
-  { label: 'Gönüllüler', icon: Icons.volunteers, path: '/volunteers', badge: null },
-  { label: 'Harita',     icon: Icons.map,        path: '/map',       badge: null },
+  { label: 'Dashboard',        icon: Icons.dashboard,  path: '/dashboard', badge: null },
+  { label: 'Talepler',         icon: Icons.requests,   path: '/requests',  badge: 24   },
+  { label: 'STK Yetkililer',   icon: Icons.volunteers, path: '/volunteers', badge: null },
+  { label: 'Resmi Yetkililer', icon: Icons.resources,  path: '/officials',  badge: null },
+  { label: 'Harita',           icon: Icons.map,        path: '/map',       badge: null },
 ]
 const analysisNav = [
-  { label: 'Sismik Veriler', icon: Icons.seismic,   path: '/seismic',   badge: null },
-  { label: 'AI Tahminler',   icon: Icons.ai,        path: '/ai',        badge: null },
-  { label: 'Kaynaklar',      icon: Icons.resources, path: '/resources', badge: null },
+  { label: 'Sismik Veriler', icon: Icons.seismic, path: '/seismic', badge: null },
+  { label: 'AI Tahminler',   icon: Icons.ai,      path: '/ai',      badge: null },
 ]
 
 const roleLabel: Record<string, { label: string; color: string }> = {
-  admin:     { label: 'Yönetici', color: '#818cf8' },
-  afad:      { label: 'AFAD',     color: '#60a5fa' },
-  stk:       { label: 'STK',      color: '#34d399' },
-  umke:      { label: 'UMKE',     color: '#fbbf24' },
-  NGO:       { label: 'STK/NGO',  color: '#34d399' },
-  CITIZEN:   { label: 'Vatandaş', color: '#94a3b8' },
-  VOLUNTEER: { label: 'Gönüllü',  color: '#fbbf24' },
+  ADMIN:            { label: 'Süper Admin',     color: '#f87171' },
+  NGO_MANAGER:      { label: 'STK Yöneticisi',  color: '#34d399' },
+  NGO_STAFF:        { label: 'STK Görevlisi',   color: '#4ade80' },
+  OFFICIAL_MANAGER: { label: 'Resmi Yönetici',  color: '#60a5fa' },
+  OFFICIAL_STAFF:   { label: 'Resmi Görevli',   color: '#93c5fd' },
+  VOLUNTEER:        { label: 'Gönüllü',         color: '#fbbf24' },
+  CITIZEN:          { label: 'Vatandaş',        color: '#94a3b8' },
+  NGO:              { label: 'STK/NGO',         color: '#34d399' },
 }
 
 function NavItem({ item, isActive, onClick }: { item: typeof mainNav[0]; isActive: boolean; onClick: () => void }) {
@@ -125,11 +126,27 @@ function Sidebar() {
           letterSpacing="widest" textTransform="uppercase" px={3} mb={1}>
           Analiz
         </Text>
-        <Stack spacing={0.5}>
+        <Stack spacing={0.5} mb={role === 'ADMIN' ? 4 : 0}>
           {analysisNav.map(item => (
             <NavItem key={item.path} item={item} isActive={pathname === item.path} onClick={() => navigate(item.path)} />
           ))}
         </Stack>
+
+        {role === 'ADMIN' && (
+          <>
+            <Text fontSize="9px" fontWeight="700" color="rgba(255,255,255,0.22)"
+              letterSpacing="widest" textTransform="uppercase" px={3} mb={1} mt={2}>
+              Yönetim
+            </Text>
+            <Stack spacing={0.5}>
+              <NavItem
+                item={{ label: 'Süper Admin', icon: Icons.shield, path: '/admin', badge: null }}
+                isActive={pathname === '/admin'}
+                onClick={() => navigate('/admin')}
+              />
+            </Stack>
+          </>
+        )}
       </Stack>
 
       {/* Kullanıcı kartı */}

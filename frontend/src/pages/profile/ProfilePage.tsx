@@ -214,7 +214,7 @@ function ProfilePage() {
                   _hover={{ borderColor: 'rgba(99,102,241,0.4)' }}
                   _focus={{ borderColor: '#818cf8', boxShadow: '0 0 0 3px rgba(99,102,241,0.15)' }}
                   color="white" _placeholder={{ color: 'rgba(255,255,255,0.2)' }}
-                  borderRadius="xl" h={12} px={4} fontSize="sm"
+                  borderRadius="xl" h={9} px={4} fontSize="sm"
                 />
                 <InputRightElement h="100%" pr={1}>
                   <button type="button"
@@ -242,7 +242,7 @@ function ProfilePage() {
                   _hover={{ borderColor: 'rgba(99,102,241,0.4)' }}
                   _focus={{ borderColor: '#818cf8', boxShadow: '0 0 0 3px rgba(99,102,241,0.15)' }}
                   color="white" _placeholder={{ color: 'rgba(255,255,255,0.2)' }}
-                  borderRadius="xl" h={12} px={4} fontSize="sm"
+                  borderRadius="xl" h={9} px={4} fontSize="sm"
                 />
                 <InputRightElement h="100%" pr={1}>
                   <button type="button"
@@ -272,7 +272,7 @@ function ProfilePage() {
                   _hover={{ borderColor: 'rgba(99,102,241,0.4)' }}
                   _focus={{ borderColor: '#818cf8', boxShadow: '0 0 0 3px rgba(99,102,241,0.15)' }}
                   color="white" _placeholder={{ color: 'rgba(255,255,255,0.2)' }}
-                  borderRadius="xl" h={12} px={4} fontSize="sm"
+                  borderRadius="xl" h={9} px={4} fontSize="sm"
                 />
                 <InputRightElement h="100%" pr={1}>
                   <button type="button"

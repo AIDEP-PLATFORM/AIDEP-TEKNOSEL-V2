@@ -3,10 +3,18 @@ const EXPIRY_KEY  = 'aidep_token_expiry'
 const ROLE_KEY    = 'aidep_role'
 const USER_KEY    = 'aidep_user'
 
-// Token süreleri (ms)
-const TOKEN_TTL = 60 * 60 * 1000 // 1 saat
+// Token süreleri (ms) — backend ile aynı: 24 saat
+const TOKEN_TTL = 24 * 60 * 60 * 1000
 
-export type UserRole = 'admin' | 'afad' | 'stk' | 'umke' | 'NGO' | 'CITIZEN' | 'VOLUNTEER'
+export type UserRole =
+  | 'ADMIN'
+  | 'NGO_MANAGER'
+  | 'NGO_STAFF'
+  | 'OFFICIAL_MANAGER'
+  | 'OFFICIAL_STAFF'
+  | 'VOLUNTEER'
+  | 'CITIZEN'
+  | string
 
 // ── Temel token işlemleri ──────────────────────────────────────────
 export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY)
@@ -29,7 +37,15 @@ export interface StoredUser {
   email: string
   phone: string
   role: UserRole
+  is_active: boolean
   created_at: string
+  // NGO Manager
+  organization_name?: string
+  organization_city?: string
+  activity_areas?: string[]
+  address?: string
+  // Official
+  registration_number?: string
 }
 
 export const setUser = (user: StoredUser): void =>
@@ -50,7 +66,7 @@ export const isTokenExpired = (): boolean => {
 export const isAuthenticated = (): boolean => {
   if (!getToken()) return false
   if (isTokenExpired()) {
-    removeToken() // süresi dolmuşsa temizle
+    removeToken()
     return false
   }
   return true
@@ -62,21 +78,3 @@ export const setRole = (role: UserRole): void =>
 
 export const getRole = (): UserRole | null =>
   localStorage.getItem(ROLE_KEY) as UserRole | null
-
-// Belirli rollerin erişebildiği sayfalar
-const ROLE_ACCESS: Record<string, UserRole[]> = {
-  '/dashboard':  ['admin', 'afad', 'stk', 'umke', 'NGO', 'CITIZEN', 'VOLUNTEER'],
-  '/requests':   ['admin', 'afad', 'stk', 'umke', 'NGO', 'CITIZEN', 'VOLUNTEER'],
-  '/volunteers': ['admin', 'afad', 'umke', 'NGO', 'VOLUNTEER'],
-  '/map':        ['admin', 'afad', 'stk', 'umke', 'NGO', 'CITIZEN', 'VOLUNTEER'],
-  '/resources':  ['admin', 'afad', 'NGO'],
-  '/simulation': ['admin', 'afad', 'stk', 'NGO'],
-}
-
-export const canAccess = (path: string): boolean => {
-  const role = getRole()
-  if (!role) return false
-  const allowed = ROLE_ACCESS[path]
-  if (!allowed) return true // tanımsız sayfa → serbest
-  return allowed.includes(role)
-}

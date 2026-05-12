@@ -1,5 +1,8 @@
-import { Box, Flex, Grid, Heading, Text, Avatar, Input, InputGroup, InputLeftElement, Stack } from '@chakra-ui/react'
+import { useState, useMemo } from 'react'
+import { Box, Flex, Grid, Heading, Text, Input, InputGroup, InputLeftElement, Stack } from '@chakra-ui/react'
 import { motion } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
+import { STKS, activityColor, stkStatusCfg } from '@/data/stkData'
 
 const MotionBox = motion(Box)
 
@@ -9,111 +12,167 @@ const SearchIcon = () => (
   </svg>
 )
 
-const volunteers = [
-  { name:'Ahmet Yılmaz',   role:'Arama Kurtarma', status:'Müsait',  region:'İstanbul', missions:14 },
-  { name:'Zeynep Kaya',    role:'Sağlık',         status:'Görevde', region:'Ankara',   missions:9  },
-  { name:'Murat Demir',    role:'Lojistik',       status:'Müsait',  region:'İzmir',    missions:21 },
-  { name:'Elif Şahin',     role:'Arama Kurtarma', status:'Pasif',   region:'Bursa',    missions:6  },
-  { name:'Can Öztürk',     role:'İletişim',       status:'Müsait',  region:'İstanbul', missions:18 },
-  { name:'Selin Arslan',   role:'Sağlık',         status:'Görevde', region:'İzmir',    missions:11 },
-  { name:'Burak Çelik',    role:'Lojistik',       status:'Müsait',  region:'Ankara',   missions:7  },
-  { name:'Deniz Aydın',    role:'Arama Kurtarma', status:'Müsait',  region:'Antalya',  missions:23 },
-]
+const ChevronIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="9 18 15 12 9 6"/>
+  </svg>
+)
 
-const statusStyle: Record<string,{color:string;bg:string}> = {
-  'Müsait':  { color:'#4ade80', bg:'rgba(74,222,128,0.12)'  },
-  'Görevde': { color:'#60a5fa', bg:'rgba(96,165,250,0.12)'  },
-  'Pasif':   { color:'#9ca3af', bg:'rgba(156,163,175,0.12)' },
-}
-const roleColor: Record<string,string> = {
-  'Arama Kurtarma':'#f87171',
-  'Sağlık':        '#34d399',
-  'Lojistik':      '#fbbf24',
-  'İletişim':      '#60a5fa',
-}
-const roleAvatarBg: Record<string,string> = {
-  'Arama Kurtarma':'rgba(248,113,113,0.15)',
-  'Sağlık':        'rgba(52,211,153,0.15)',
-  'Lojistik':      'rgba(251,191,36,0.15)',
-  'İletişim':      'rgba(96,165,250,0.15)',
-}
+const UsersIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
+    <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+  </svg>
+)
+
+const MapPinIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
+  </svg>
+)
 
 function VolunteersPage() {
+  const navigate = useNavigate()
+  const [search, setSearch] = useState('')
+
+  const filtered = useMemo(() =>
+    STKS.filter(s =>
+      s.org.toLowerCase().includes(search.toLowerCase()) ||
+      s.activity.toLowerCase().includes(search.toLowerCase())
+    ), [search])
+
+  const totalMembers = STKS.reduce((acc, s) => acc + s.members.length, 0)
+  const activeCount  = STKS.filter(s => s.status === 'Aktif').length
+
   return (
-    <Box p={{ base:5, md:6 }}>
-      <MotionBox initial={{ opacity:0, y:16 }} animate={{ opacity:1, y:0 }} transition={{ duration:0.4 } as any} mb={6}>
-        <Heading size="lg" color="white" fontWeight="800">Gönüllüler</Heading>
-        <Text color="rgba(255,255,255,0.4)" fontSize="sm" mt={1}>Kayıtlı gönüllü listesi ve durum bilgisi</Text>
+    <Box p={{ base: 5, md: 6 }}>
+      {/* Başlık */}
+      <MotionBox initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 } as any} mb={6}>
+        <Heading size="lg" color="white" fontWeight="800">STK Yetkililer</Heading>
+        <Text color="rgba(255,255,255,0.4)" fontSize="sm" mt={1}>
+          Kayıtlı sivil toplum kuruluşları ve personel bilgileri
+        </Text>
       </MotionBox>
 
-      <Grid templateColumns="repeat(3,1fr)" gap={4} mb={5}>
+      {/* İstatistik kartları */}
+      <Grid templateColumns="repeat(3, 1fr)" gap={4} mb={5}>
         {[
-          { label:'Müsait',  count:138, color:'#4ade80', bg:'rgba(74,222,128,0.08)',  border:'rgba(74,222,128,0.2)'  },
-          { label:'Görevde', count:54,  color:'#60a5fa', bg:'rgba(96,165,250,0.08)',  border:'rgba(96,165,250,0.2)'  },
-          { label:'Pasif',   count:31,  color:'#9ca3af', bg:'rgba(156,163,175,0.08)', border:'rgba(156,163,175,0.2)' },
-        ].map((s,i) => (
-          <MotionBox key={s.label} initial={{ opacity:0, y:12 }} animate={{ opacity:1, y:0 }}
-            transition={{ delay:i*0.08, duration:0.35 } as any}
+          { label: 'Toplam STK',   count: STKS.length,  color: '#818cf8', bg: 'rgba(129,140,248,0.08)', border: 'rgba(129,140,248,0.2)' },
+          { label: 'Aktif',        count: activeCount,   color: '#4ade80', bg: 'rgba(74,222,128,0.08)',  border: 'rgba(74,222,128,0.2)'  },
+          { label: 'Toplam Üye',   count: totalMembers,  color: '#60a5fa', bg: 'rgba(96,165,250,0.08)',  border: 'rgba(96,165,250,0.2)'  },
+        ].map((s, i) => (
+          <MotionBox key={s.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.08, duration: 0.35 } as any}
             bg={s.bg} border={`1px solid ${s.border}`} borderRadius="2xl" p={5} textAlign="center"
             backdropFilter="blur(12px)">
             <Text fontSize="3xl" fontWeight="800" color={s.color}>{s.count}</Text>
-            <Text fontSize="xs" color="rgba(255,255,255,0.4)" mt={1} fontWeight="500" textTransform="uppercase" letterSpacing="wider">{s.label}</Text>
+            <Text fontSize="xs" color="rgba(255,255,255,0.4)" mt={1} fontWeight="500"
+              textTransform="uppercase" letterSpacing="wider">{s.label}</Text>
           </MotionBox>
         ))}
       </Grid>
 
-      <MotionBox initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.2 } as any} mb={4}>
+      {/* Arama */}
+      <MotionBox initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        transition={{ delay: 0.2 } as any} mb={4}>
         <InputGroup>
-          <InputLeftElement pointerEvents="none" color="rgba(255,255,255,0.25)" mt={1}>
-            <SearchIcon/>
+          <InputLeftElement pointerEvents="none" h={8} color="rgba(255,255,255,0.3)">
+            <SearchIcon />
           </InputLeftElement>
-          <Input placeholder="İsim veya bölge ara..."
-            bg="rgba(255,255,255,0.04)" border="1px solid rgba(255,255,255,0.08)"
-            borderRadius="xl" color="white" _placeholder={{ color:'rgba(255,255,255,0.25)' }}
-            _hover={{ borderColor:'rgba(249,115,22,0.5)' }}
-            _focus={{ borderColor:'#f97316', boxShadow:'0 0 0 3px rgba(249,115,22,0.12)' }}
-            h={11} fontSize="sm"/>
+          <Input
+            placeholder="STK adı veya faaliyet alanı ara..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            bg="rgba(255,255,255,0.04)"
+            border="1px solid rgba(255,255,255,0.08)"
+            borderRadius="xl"
+            color="white"
+            _placeholder={{ color: 'rgba(255,255,255,0.25)' }}
+            _hover={{ borderColor: 'rgba(52,211,153,0.4)' }}
+            _focus={{ borderColor: '#34d399', boxShadow: '0 0 0 3px rgba(52,211,153,0.12)' }}
+            h={8} fontSize="sm" pl={10}
+          />
         </InputGroup>
       </MotionBox>
 
-      <MotionBox initial={{ opacity:0, y:20 }} animate={{ opacity:1, y:0 }} transition={{ delay:0.25, duration:0.35 } as any}
-        bg="rgba(255,255,255,0.03)" border="1px solid rgba(255,255,255,0.07)"
-        borderRadius="2xl" overflow="hidden" backdropFilter="blur(12px)">
-        <Grid templateColumns="2fr 1.5fr 1fr 1fr 0.8fr"
-          px={6} py={3} borderBottom="1px solid rgba(255,255,255,0.06)" bg="rgba(255,255,255,0.02)">
-          {['Gönüllü','Uzmanlık','Durum','Bölge','Görev'].map(h => (
-            <Text key={h} fontSize="10px" color="rgba(255,255,255,0.3)" fontWeight="700" letterSpacing="widest" textTransform="uppercase">{h}</Text>
-          ))}
-        </Grid>
-        <Stack spacing={0}>
-          {volunteers.map((v,i) => (
-            <MotionBox key={v.name}
-              initial={{ opacity:0, x:-12 }} animate={{ opacity:1, x:0 }}
-              transition={{ delay:0.3+i*0.05, duration:0.3 } as any}
-              whileHover={{ bg:'rgba(255,255,255,0.04)' } as any}>
-              <Grid templateColumns="2fr 1.5fr 1fr 1fr 0.8fr"
-                px={6} py={4} alignItems="center"
-                borderBottom={i < volunteers.length-1 ? '1px solid rgba(255,255,255,0.04)' : 'none'}>
-                <Flex align="center" gap={3}>
-                  <Avatar name={v.name} size="sm" bg={roleAvatarBg[v.role] ?? 'rgba(156,163,175,0.15)'} color={roleColor[v.role] ?? '#9ca3af'} fontSize="xs"/>
-                  <Text fontSize="sm" color="white" fontWeight="500">{v.name}</Text>
-                </Flex>
-                <Flex align="center" gap={2}>
-                  <Box w={2} h={2} borderRadius="full" bg={roleColor[v.role] ?? '#9ca3af'} flexShrink={0}/>
-                  <Text fontSize="sm" color="rgba(255,255,255,0.55)">{v.role}</Text>
-                </Flex>
-                <Box>
-                  <Box display="inline-block" px={2.5} py={0.5} borderRadius="full" bg={statusStyle[v.status].bg}>
-                    <Text fontSize="10px" fontWeight="700" color={statusStyle[v.status].color}>{v.status}</Text>
+      {/* STK Listesi */}
+      <Stack spacing={3}>
+        {filtered.map((stk, i) => {
+          const cfg    = stkStatusCfg[stk.status]
+          const aColor = activityColor[stk.activity] ?? '#9ca3af'
+          const ils    = [...new Set(stk.members.map(m => m.il))]
+
+          return (
+            <MotionBox
+              key={stk.id}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.25 + i * 0.06, duration: 0.32 } as any}
+              whileHover={{ y: -2, borderColor: 'rgba(255,255,255,0.14)' } as any}
+              onClick={() => navigate(`/volunteers/${stk.id}`)}
+              cursor="pointer"
+              bg="rgba(255,255,255,0.03)"
+              border="1px solid rgba(255,255,255,0.07)"
+              borderRadius="2xl"
+              overflow="hidden"
+              backdropFilter="blur(12px)"
+            >
+              <Flex align="center" px={6} py={4} gap={4}>
+                {/* İkon */}
+                <Flex w={12} h={12} borderRadius="xl" flexShrink={0}
+                  bg={`${aColor}18`} border={`1px solid ${aColor}33`}
+                  align="center" justify="center">
+                  <Box color={aColor}>
+                    <UsersIcon />
                   </Box>
+                </Flex>
+
+                {/* Bilgiler */}
+                <Box flex={1} minW={0}>
+                  <Flex align="center" gap={2} mb={1}>
+                    <Text fontSize="sm" fontWeight="700" color="white" isTruncated>
+                      {stk.org}
+                    </Text>
+                    {/* Durum rozeti */}
+                    <Box px={2} py={0.5} borderRadius="full" bg={cfg.bg} flexShrink={0}>
+                      <Text fontSize="10px" fontWeight="700" color={cfg.color}>{stk.status}</Text>
+                    </Box>
+                  </Flex>
+                  <Flex align="center" gap={3} flexWrap="wrap">
+                    {/* Faaliyet */}
+                    <Flex align="center" gap={1.5}>
+                      <Box w={2} h={2} borderRadius="full" bg={aColor} />
+                      <Text fontSize="xs" color="rgba(255,255,255,0.45)">{stk.activity}</Text>
+                    </Flex>
+                    {/* Üye sayısı */}
+                    <Flex align="center" gap={1.5} color="rgba(255,255,255,0.35)">
+                      <UsersIcon />
+                      <Text fontSize="xs">{stk.members.length} üye</Text>
+                    </Flex>
+                    {/* İller */}
+                    <Flex align="center" gap={1} color="rgba(255,255,255,0.35)">
+                      <MapPinIcon />
+                      <Text fontSize="xs">{ils.join(' · ')}</Text>
+                    </Flex>
+                  </Flex>
                 </Box>
-                <Text fontSize="sm" color="rgba(255,255,255,0.5)">{v.region}</Text>
-                <Text fontSize="sm" color="rgba(255,255,255,0.35)" fontFamily="mono">{v.missions}</Text>
-              </Grid>
+
+                {/* Ok */}
+                <Box color="rgba(255,255,255,0.25)" flexShrink={0}>
+                  <ChevronIcon />
+                </Box>
+              </Flex>
             </MotionBox>
-          ))}
-        </Stack>
-      </MotionBox>
+          )
+        })}
+
+        {filtered.length === 0 && (
+          <Box textAlign="center" py={12}>
+            <Text color="rgba(255,255,255,0.3)" fontSize="sm">Sonuç bulunamadı</Text>
+          </Box>
+        )}
+      </Stack>
     </Box>
   )
 }
