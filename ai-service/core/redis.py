@@ -25,4 +25,6 @@ async def close_redis() -> None:
 
 
 def get_redis() -> aioredis.Redis:
+    if redis_client is None:
+        raise RuntimeError("Redis başlatılmamış — init_redis() çağrılmadı")
     return redis_client

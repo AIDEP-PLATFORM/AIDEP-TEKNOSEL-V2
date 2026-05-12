@@ -42,8 +42,9 @@ async def run_damage_detection(
     latitude: float,
     longitude: float,
     report_id: UUID | None = None,
+    image_s3_url: str | None = None,
 ) -> DamageDetectionResponse:
-    return await analyze_photo(image_bytes, latitude, longitude, report_id)
+    return await analyze_photo(image_bytes, latitude, longitude, report_id, image_s3_url)
 
 
 async def run_priority_scoring(req: PriorityRequest) -> PriorityResponse:

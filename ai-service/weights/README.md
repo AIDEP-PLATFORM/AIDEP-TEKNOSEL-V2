@@ -6,7 +6,7 @@ Bu klasör model dosyalarını içerir. Dosyalar boyutu nedeniyle `.gitignore`'d
 
 | Dosya | Boyut (tahmini) | Açıklama |
 |---|---|---|
-| `yolov8m_damage.pt` | ~52 MB | YOLOv8m hasar tespit modeli (7 sınıf) |
+| `yolov8m_damage.pt` | ~22 MB | YOLOv8s hasar tespit modeli (11 sınıf: bina/yol hasar kategorileri) |
 | `xgboost_priority.json` | ~1 MB | XGBoost önceliklendirme modeli (7 özellik → 0–100 skor) |
 
 ## Dosyalar Olmadan Ne Olur?
@@ -17,11 +17,10 @@ Her iki model da **mock fallback** ile çalışır — dosyalar olmasa bile serv
 
 Model dosyaları eğitildikten sonra şu yöntemlerden biriyle servis edilebilir:
 
-**1. S3 / MinIO'dan çek (önerilen CI/CD yöntemi)**
-```bash
-aws s3 cp s3://aidep-models/yolov8m_damage.pt ai-service/weights/
-aws s3 cp s3://aidep-models/xgboost_priority.json ai-service/weights/
-```
+**1. MinIO'dan otomatik çek (önerilen — docker-compose başlatınca otomatik yapılır)**
+
+`ai-models` bucket'ındaki dosyalar startup'ta `/tmp/weights/` klasörüne indirilir.
+Yerel `weights/` klasöründe dosya varsa ilk başlatmada MinIO'ya otomatik yüklenir.
 
 **2. Docker build sırasında kopyala**
 ```dockerfile

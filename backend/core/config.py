@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     # AI Service
     AI_SERVICE_URL: str = "http://ai-service:8000"
+    AI_INTERNAL_API_KEY: str = "change-me-generate-with-openssl"
 
     # Auth
     SECRET_KEY: str

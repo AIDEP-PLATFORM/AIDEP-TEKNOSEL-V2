@@ -19,11 +19,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["AI Pipeline"])
 
 _AI_BASE = settings.AI_SERVICE_URL
+_AI_HEADERS = {"X-API-Key": settings.AI_INTERNAL_API_KEY}
 
 
 async def _proxy_get(path: str) -> dict:
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.get(f"{_AI_BASE}{path}")
+        resp = await client.get(f"{_AI_BASE}{path}", headers=_AI_HEADERS)
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     return resp.json()
@@ -31,7 +32,7 @@ async def _proxy_get(path: str) -> dict:
 
 async def _proxy_post_json(path: str, body: dict) -> dict:
     async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(f"{_AI_BASE}{path}", json=body)
+        resp = await client.post(f"{_AI_BASE}{path}", json=body, headers=_AI_HEADERS)
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)
     return resp.json()
@@ -58,6 +59,7 @@ async def analyze_damage(
             f"{_AI_BASE}/ai/analyze-damage",
             data=data,
             files={"file": (file.filename, image_bytes, file.content_type)},
+            headers=_AI_HEADERS,
         )
     if resp.status_code >= 400:
         raise HTTPException(status_code=resp.status_code, detail=resp.text)

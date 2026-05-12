@@ -17,9 +17,12 @@ class PriorityRequest(BaseModel):
     wait_time_minutes: int = Field(..., ge=0)
     distance_km: float = Field(..., ge=0.0)
     need_type: NeedType
-    meteorology_score: float = Field(..., ge=0.0, le=1.0)
+    meteorology_score: float = Field(0.0, ge=0.0, le=1.0)
     person_count: int = Field(..., ge=1)
     area_damage_score: float = Field(..., ge=0.0, le=1.0)
+    # Verilirse meteorology_score otomatik hesaplanır
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
 
 
 class PriorityResponse(BaseModel):

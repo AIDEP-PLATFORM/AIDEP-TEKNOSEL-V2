@@ -1,8 +1,10 @@
 import asyncio
 import logging
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from core.redis import get_redis
+from core.mongodb import get_collection
 from models.yolo_model import (
     predict_sync,
     is_yolo_loaded,
@@ -16,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 _GRID_PRECISION = 3
 MIN_CONFIRMATIONS = 3
-_GRID_TTL_SECONDS = 72 * 3600
+_GRID_TTL_SECONDS = 6 * 3600
 
 
 def _grid_cell_id(lat: float, lon: float) -> str:
@@ -40,16 +42,53 @@ def _compute_image_scores(detections: list[dict]) -> tuple[float, float]:
     return road, bldg
 
 
+async def _save_to_mongodb(
+    report_id: UUID,
+    latitude: float,
+    longitude: float,
+    detections: list[dict],
+    damage_score: float,
+    multi_confirm_count: int,
+    image_s3_url: str | None = None,
+) -> None:
+    collection = get_collection("damage_detections")
+    if collection is None:
+        return
+    try:
+        doc = {
+            "report_id": str(report_id),
+            "image_s3_url": image_s3_url,
+            "location": {"lat": latitude, "lng": longitude},
+            "detections": [
+                {
+                    "class": d["class_name"],
+                    "confidence": d["confidence"],
+                    "bbox": d["bbox"],
+                    "damage_score": d["damage_score"],
+                }
+                for d in detections
+            ],
+            "damage_score": round(damage_score * 100, 2),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "multi_confirm_count": multi_confirm_count,
+            "model_source": "yolov8" if is_yolo_loaded() else "mock",
+        }
+        await collection.insert_one(doc)
+    except Exception as exc:
+        logger.warning("MongoDB kayit hatasi (devam ediliyor): %s", exc)
+
+
 async def analyze_photo(
     image_bytes: bytes,
     latitude: float,
     longitude: float,
     report_id: UUID | None = None,
+    image_s3_url: str | None = None,
 ) -> DamageDetectionResponse:
     report_id = report_id or uuid4()
     cell_id = _grid_cell_id(latitude, longitude)
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     detections_raw = await loop.run_in_executor(None, predict_sync, image_bytes)
 
     road_score, bldg_score = _compute_image_scores(detections_raw)
@@ -67,6 +106,8 @@ async def analyze_photo(
     count = len(all_scores)
     aggregated = round(sum(all_scores) / count, 4) if all_scores else area_score
     is_confirmed = count >= MIN_CONFIRMATIONS
+
+    await _save_to_mongodb(report_id, latitude, longitude, detections_raw, area_score, count, image_s3_url)
 
     logger.info(
         "Hasar analizi | cell=%s count=%d agg=%.3f confirmed=%s",
