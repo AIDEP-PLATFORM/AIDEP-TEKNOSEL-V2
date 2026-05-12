@@ -5,6 +5,10 @@ import numpy as np
 
 from models.xgboost_model import predict_sync, is_xgb_loaded
 from schemas.priority import PriorityRequest, PriorityResponse
+from services.weather import get_meteorology_score
+
+# Toplu skorlamada eşzamanlı hava durumu isteği sınırı
+_WEATHER_SEMAPHORE = asyncio.Semaphore(20)
 
 logger = logging.getLogger(__name__)
 
@@ -37,17 +41,28 @@ def _build_feature_vector(req: PriorityRequest) -> np.ndarray:
     ], dtype=np.float32)
 
 
-async def score_request(req: PriorityRequest) -> PriorityResponse:
+async def score_request(req: PriorityRequest, _semaphore: asyncio.Semaphore | None = None) -> PriorityResponse:
+    # lat/lon verilmişse hava durumunu otomatik çek
+    if req.latitude is not None and req.longitude is not None:
+        sem = _semaphore or _WEATHER_SEMAPHORE
+        async with sem:
+            auto_meteo = await get_meteorology_score(req.latitude, req.longitude)
+        req = req.model_copy(update={"meteorology_score": auto_meteo})
+        logger.info(
+            "Hava durumu otomatik alindi | request=%s score=%.3f",
+            req.request_id, auto_meteo,
+        )
+
     features = _build_feature_vector(req)
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     raw_score = await loop.run_in_executor(None, predict_sync, features)
 
     priority_class = _to_priority_class(raw_score)
 
     logger.info(
-        "Onceliklendirme | request=%s score=%.1f class=%s",
-        req.request_id, raw_score, priority_class,
+        "Onceliklendirme | request=%s score=%.1f class=%s meteo=%.3f",
+        req.request_id, raw_score, priority_class, req.meteorology_score,
     )
 
     return PriorityResponse(
@@ -59,6 +74,7 @@ async def score_request(req: PriorityRequest) -> PriorityResponse:
 
 
 async def score_requests_bulk(requests: list[PriorityRequest]) -> list[PriorityResponse]:
-    tasks = [score_request(r) for r in requests]
+    sem = asyncio.Semaphore(20)
+    tasks = [score_request(r, sem) for r in requests]
     results = await asyncio.gather(*tasks)
     return sorted(results, key=lambda r: r.priority_score, reverse=True)

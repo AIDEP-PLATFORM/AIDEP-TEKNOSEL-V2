@@ -7,13 +7,17 @@ from core.config import settings
 logger = logging.getLogger(__name__)
 
 session = aioboto3.Session(
-    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-    region_name=settings.AWS_S3_REGION,
+    aws_access_key_id=settings.AWS_ACCESS_KEY_ID or None,
+    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY or None,
+    region_name=settings.AWS_S3_REGION or None,
 )
 
 
 async def init_s3():
+    if not settings.AWS_ACCESS_KEY_ID or not settings.AWS_S3_BUCKET or not settings.AWS_S3_REGION:
+        logger.info("AWS S3 kredileri ayarlanmamis — S3 atlaniyor (MinIO kullaniliyor).")
+        return
+
     try:
         async with session.client("s3") as s3:
             await s3.head_bucket(Bucket=settings.AWS_S3_BUCKET)

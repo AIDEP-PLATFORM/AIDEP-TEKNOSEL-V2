@@ -1,5 +1,5 @@
 """
-/ai/* — AI Pipeline Endpoint'leri (internal, auth yok)
+/ai/* — AI Pipeline Endpoint'leri (X-API-Key zorunlu)
 
 POST /ai/analyze-damage    Adım 1: Fotoğraf → hasar tespiti
 POST /ai/score-request     Adım 2: Talep → öncelik skoru
@@ -11,9 +11,10 @@ GET  /ai/status            Model durum kontrolü
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Security, UploadFile, status
+from fastapi.security import APIKeyHeader
 
-import pipeline as ai_pipeline
+from core.config import settings
 from pipeline import (
     run_damage_detection,
     run_priority_scoring,
@@ -21,6 +22,7 @@ from pipeline import (
     run_matching,
     get_live_damage_map,
 )
+import pipeline as ai_pipeline
 from schemas.damage import DamageDetectionResponse, DamageMapCell
 from schemas.priority import (
     PriorityRequest,
@@ -28,10 +30,19 @@ from schemas.priority import (
     MatchPayload,
     MatchResponse,
 )
+from services.weather import get_weather_detail
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/ai", tags=["AI Pipeline"])
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def _verify_api_key(key: str | None = Security(_api_key_header)) -> None:
+    if key != settings.AI_INTERNAL_API_KEY:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Geçersiz API key")
+
+
+router = APIRouter(prefix="/ai", tags=["AI Pipeline"], dependencies=[Depends(_verify_api_key)])
 
 
 @router.post(
@@ -44,6 +55,7 @@ async def analyze_damage(
     latitude: float  = Form(..., ge=-90,  le=90),
     longitude: float = Form(..., ge=-180, le=180),
     report_id: UUID | None = Form(None),
+    image_s3_url: str | None = Form(None, description="Backend'in S3/MinIO'ya yüklediği fotoğraf URL'i"),
 ) -> DamageDetectionResponse:
     if file.content_type not in ("image/jpeg", "image/png", "image/webp"):
         raise HTTPException(
@@ -58,7 +70,7 @@ async def analyze_damage(
             detail="Dosya boyutu 10 MB'ı aşamaz",
         )
 
-    return await run_damage_detection(image_bytes, latitude, longitude, report_id)
+    return await run_damage_detection(image_bytes, latitude, longitude, report_id, image_s3_url)
 
 
 @router.post(
@@ -112,6 +124,17 @@ async def match(payload: MatchPayload) -> MatchResponse:
 async def damage_map() -> list[DamageMapCell]:
     cells_raw = await get_live_damage_map()
     return [DamageMapCell(**c) for c in cells_raw]
+
+
+@router.get(
+    "/weather-score",
+    summary="Koordinata göre hava durumu ve meteorology_score",
+)
+async def weather_score(
+    latitude:  float = Query(..., ge=-90,  le=90),
+    longitude: float = Query(..., ge=-180, le=180),
+) -> dict:
+    return await get_weather_detail(latitude, longitude)
 
 
 @router.get(

@@ -1,7 +1,9 @@
 services:
   db:
     image: postgis/postgis:16-3.4
+    platform: linux/amd64
     container_name: aidep_db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -20,11 +22,14 @@ services:
 
   redis:
     image: redis:7.2-alpine
+    platform: linux/amd64
     container_name: aidep_redis
+    restart: unless-stopped
     volumes:
       - redis_data:/data
+    # Geliştirmede dışarıya açık — production'da bu satırı kaldır
     ports:
-      - "${REDIS_PORT:-6380}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
     networks:
       - aidep_network
     healthcheck:
@@ -35,7 +40,9 @@ services:
 
   minio:
     image: minio/minio:latest
+    platform: linux/amd64
     container_name: aidep_minio
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -48,14 +55,45 @@ services:
     networks:
       - aidep_network
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
+      test: ["CMD-SHELL", "mc alias set local http://localhost:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD && mc ready local"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  mongodb:
+    image: mongo:7.0
+    platform: linux/amd64
+    container_name: aidep_mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-aidep-platform}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-Aidep7856.}
+      MONGO_INITDB_DATABASE: aidep_ai
+    volumes:
+      - mongo_data:/data/db
+    # Geliştirmede dışarıya açık — production'da bu satırı kaldır
+    ports:
+      - "127.0.0.1:27017:27017"
+    networks:
+      - aidep_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
+  # OSRM — osrm-data/ klasörüne Türkiye verisi işlendikten sonra aktif olur
+  # Veri yoksa ai-service mock routing kullanır (haversine/40km)
   osrm:
     image: ghcr.io/project-osrm/osrm-backend:latest
+    platform: linux/amd64
     container_name: aidep_osrm
+    profiles: ["routing"]
+    command: osrm-routed --algorithm mld /data/turkey-latest.osrm
+    volumes:
+      - ./osrm-data:/data
     ports:
       - "5000:5000"
     networks:
@@ -65,14 +103,28 @@ services:
     build:
       context: ./ai-service
       dockerfile: Dockerfile
+    platform: linux/amd64
     container_name: aidep_ai
+    restart: unless-stopped
     environment:
       REDIS_URL: redis://redis:6379/0
       OSRM_URL: http://osrm:5000
+      MONGODB_URL: mongodb://${MONGO_USER:-aidep-platform}:${MONGO_PASSWORD:-Aidep7856.}@mongodb:27017/aidep_ai?authSource=admin
+      MONGODB_DB: aidep_ai
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aidep-platform}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-Aidep7856.}
+      MINIO_SECURE: "false"
+      MINIO_BUCKET_MODELS: ai-models
+      AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:-change-me-generate-with-openssl}
     ports:
       - "8002:8000"
     depends_on:
       redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - aidep_network
@@ -84,7 +136,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       target: development
+    platform: linux/amd64
     container_name: aidep_backend
+    restart: unless-stopped
     env_file:
       - .env
     environment:
@@ -93,6 +147,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       MINIO_URL: http://minio:9000
       OSRM_URL: http://osrm:5000
+      AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:-change-me-generate-with-openssl}
       AI_SERVICE_URL: http://ai-service:8000
     ports:
       - "8001:8000"
@@ -119,3 +174,4 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  mongo_data:
