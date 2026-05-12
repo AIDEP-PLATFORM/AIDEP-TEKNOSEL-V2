@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
-from models.user import OrgType
+from core.dependencies import get_current_user
+from models.user import OrgType, User, UserRole
 from schemas.organization import OrganizationCreateRequest, OrganizationResponse
 from services import organization_service
 
@@ -11,16 +12,22 @@ router = APIRouter(prefix="/organizations", tags=["Organizations"])
 
 
 # ─── Admin: Kurum Şubesi Ekle ──────────────────────────────────
-# TODO: Admin auth middleware eklenecek
 
 @router.post("", response_model=OrganizationResponse, status_code=201)
 async def create_organization(
-    data: OrganizationCreateRequest, db: AsyncSession = Depends(get_db)
+    data: OrganizationCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Admin panelinden kurum şubesi ekler.
+    """Admin panelinden kurum şubesi ekler. Sadece ADMIN erişebilir.
     org_type='STK' → AKUT, Kızılay gönüllü bazlı
     org_type='OFFICIAL' → AFAD, UMKE devlet kurumları
     """
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Kurum şubesi sadece admin tarafından eklenebilir",
+        )
     return await organization_service.create_organization(db, data)
 
 
