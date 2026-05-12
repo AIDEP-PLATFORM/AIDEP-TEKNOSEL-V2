@@ -16,12 +16,16 @@ from models.user import (
     User, VolunteerProfile, NgoManagerProfile,
     NgoStaffProfile, OfficialProfile, Organization, UserRole,
 )
+from geoalchemy2.shape import from_shape
+from shapely.geometry import Point
+
 from schemas.auth import (
     RegisterRequest,
     NgoManagerRegisterRequest,
     NgoStaffRegisterRequest,
     OfficialRegisterRequest,
     SkillsUpdateRequest,
+    LocationUpdateRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -239,6 +243,21 @@ async def update_volunteer_skills(
     await db.refresh(profile)
     logger.info(f"Gönüllü becerileri güncellendi: {user.email}")
     return profile
+
+
+# ─── Konum Güncelleme ───────────────────────────────────────────
+
+async def update_location(
+    db: AsyncSession, user: User, data: LocationUpdateRequest
+) -> User:
+    """Mobil uygulamadan gelen anlık konumu users.current_location'a kaydeder."""
+    user.current_location = from_shape(
+        Point(data.longitude, data.latitude), srid=4326
+    )
+    await db.commit()
+    await db.refresh(user)
+    logger.info(f"Konum güncellendi: {user.email} → ({data.latitude}, {data.longitude})")
+    return user
 
 
 # ─── Giriş ─────────────────────────────────────────────────────
