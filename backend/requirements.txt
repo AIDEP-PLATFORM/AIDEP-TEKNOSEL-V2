@@ -24,6 +24,9 @@ python-multipart==0.0.20
 # Cache
 redis==5.2.1
 
+# Geospatial
+shapely==2.0.6
+
 # Object Storage
 miniopy-async==1.21.1
 aioboto3==13.3.0

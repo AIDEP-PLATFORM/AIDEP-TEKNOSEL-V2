@@ -10,6 +10,7 @@ from schemas.auth import (
     NgoStaffRegisterRequest,
     OfficialRegisterRequest,
     SkillsUpdateRequest,
+    LocationUpdateRequest,
     LoginRequest,
     TokenResponse,
     UserResponse,
@@ -93,3 +94,14 @@ async def update_skills(
     """Gönüllü ilk giriş popup'ında becerilerini kaydeder."""
     profile = await auth_service.update_volunteer_skills(db, current_user, data)
     return VolunteerProfileResponse.model_validate(profile)
+
+
+@router.put("/me/location", response_model=UserResponse)
+async def update_location(
+    data: LocationUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mobil uygulama anlık konumu günceller. Harita ekip görünümü için kullanılır."""
+    user = await auth_service.update_location(db, current_user, data)
+    return UserResponse.model_validate(user)

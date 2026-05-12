@@ -187,6 +187,12 @@ class SkillsUpdateRequest(BaseModel):
         return cleaned
 
 
+class LocationUpdateRequest(BaseModel):
+    """Mobil uygulamanın anlık konum güncellemesi için."""
+    latitude: float
+    longitude: float
+
+
 # ─── Login ─────────────────────────────────────────────────────
 
 class LoginRequest(BaseModel):
