@@ -1,4 +1,5 @@
 import { Redirect, Stack } from 'expo-router';
+import { View } from 'react-native';
 import { useAuthStore } from '@/store/auth.store';
 import { LoadingScreen } from '@/components/common/loading-screen';
 
@@ -9,8 +10,10 @@ export default function AppLayout() {
   if (!user) return <Redirect href="/(auth)/login" />;
 
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a1628' } }}>
-      <Stack.Screen name="(tabs)" />
-    </Stack>
+    <View style={{ flex: 1, backgroundColor: '#0a1628' }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a1628' } }}>
+        <Stack.Screen name="(tabs)" />
+      </Stack>
+    </View>
   );
 }

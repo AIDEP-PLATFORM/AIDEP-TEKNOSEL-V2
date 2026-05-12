@@ -1,6 +1,12 @@
 import { useAuthStore } from '@/store/auth.store';
 import { authService } from '@/services/auth.service';
-import { LoginRequest, RegisterRequest } from '@/types/auth.types';
+import {
+  LoginRequest,
+  CitizenRegisterRequest,
+  NgoManagerRegisterRequest,
+  NgoStaffRegisterRequest,
+  OfficialRegisterRequest,
+} from '@/types/auth.types';
 
 export function useAuth() {
   const { user, tokens, isLoading, setUser, clearAuth } = useAuthStore();
@@ -11,8 +17,22 @@ export function useAuth() {
     return response;
   };
 
-  const register = async (data: RegisterRequest) => {
-    const response = await authService.register(data);
+  const registerCitizen = async (data: CitizenRegisterRequest) => {
+    const response = await authService.registerCitizen(data);
+    setUser(response.user, response.tokens);
+    return response;
+  };
+
+  const registerNgoManager = async (data: NgoManagerRegisterRequest) => {
+    return await authService.registerNgoManager(data); // token yok, store'a yazma
+  };
+
+  const registerNgoStaff = async (data: NgoStaffRegisterRequest) => {
+    return await authService.registerNgoStaff(data); // token yok, store'a yazma
+  };
+
+  const registerOfficial = async (data: OfficialRegisterRequest) => {
+    const response = await authService.registerOfficial(data);
     setUser(response.user, response.tokens);
     return response;
   };
@@ -24,5 +44,15 @@ export function useAuth() {
     clearAuth();
   };
 
-  return { user, tokens, isLoading, login, register, logout };
+  return {
+    user,
+    tokens,
+    isLoading,
+    login,
+    registerCitizen,
+    registerNgoManager,
+    registerNgoStaff,
+    registerOfficial,
+    logout,
+  };
 }

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/use-auth';
@@ -7,21 +7,15 @@ import { Input } from '@/components/common/input';
 import { Button } from '@/components/common/button';
 import { SelectInput } from '@/components/common/select-input';
 import { validators } from '@/utils/validators';
+import { organizationService, OrganizationBranch } from '@/services/organization.service';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, BorderRadius } from '@/constants/theme';
 
-const STK_OPTIONS = [
-  'AKUT Arama Kurtarma Derneği',
-  'Kızılay',
-  'İHH İnsani Yardım Vakfı',
-  'ARKS Arama Kurtarma',
-  'TEGV',
-  'Diğer',
-];
-
 export default function CitizenRegisterScreen() {
   const insets = useSafeAreaInsets();
-  const { register } = useAuth();
+  const { registerCitizen } = useAuth();
+
+  // Zorunlu alanlar
   const [fullName, setFullName] = useState('');
   const [tcNo, setTcNo] = useState('');
   const [email, setEmail] = useState('');
@@ -29,12 +23,52 @@ export default function CitizenRegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  // Opsiyonel STK alanları
-  const [selectedStk, setSelectedStk] = useState('');
+
+  // Opsiyonel STK gönüllüsü alanları
+  const [orgNames, setOrgNames] = useState<string[]>([]);
+  const [selectedOrgName, setSelectedOrgName] = useState('');
+  const [orgCities, setOrgCities] = useState<string[]>([]);
+  const [selectedCity, setSelectedCity] = useState('');
+  const [orgBranches, setOrgBranches] = useState<OrganizationBranch[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<OrganizationBranch | null>(null);
   const [expertise, setExpertise] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // STK isimlerini yükle
+  useEffect(() => {
+    organizationService.getNames('STK').then(setOrgNames).catch(() => {});
+  }, []);
+
+  // Org seçilince şehirleri yükle
+  useEffect(() => {
+    if (selectedOrgName) {
+      setSelectedCity('');
+      setSelectedBranch(null);
+      setOrgBranches([]);
+      organizationService.getCities(selectedOrgName, 'STK').then(setOrgCities).catch(() => {});
+    } else {
+      setOrgCities([]);
+      setOrgBranches([]);
+      setSelectedCity('');
+      setSelectedBranch(null);
+    }
+  }, [selectedOrgName]);
+
+  // Şehir seçilince şubeleri yükle
+  useEffect(() => {
+    if (selectedOrgName && selectedCity) {
+      setSelectedBranch(null);
+      organizationService.getBranches(selectedOrgName, selectedCity, 'STK').then(setOrgBranches).catch(() => {});
+    } else {
+      setOrgBranches([]);
+      setSelectedBranch(null);
+    }
+  }, [selectedCity]);
+
+  const isVolunteer = !!selectedOrgName;
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -48,6 +82,11 @@ export default function CitizenRegisterScreen() {
     if (!validators.required(password)) newErrors.password = 'Şifre zorunludur';
     else if (!validators.password(password)) newErrors.password = 'Şifre en az 8 karakter olmalıdır';
     if (password !== confirmPassword) newErrors.confirmPassword = 'Şifreler eşleşmiyor';
+    if (isVolunteer) {
+      if (!selectedCity) newErrors.city = 'Şehir seçimi zorunludur';
+      if (!selectedBranch) newErrors.branch = 'Şube seçimi zorunludur';
+      if (!validators.required(expertise)) newErrors.expertise = 'Yetkinlikleriniz zorunludur';
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -58,7 +97,15 @@ export default function CitizenRegisterScreen() {
     setLoading(true);
     setErrors({});
     try {
-      await register({ fullName: fullName.trim(), email: email.trim().toLowerCase(), password, role: 'citizen', phone: phone || undefined });
+      await registerCitizen({
+        tc_no: tcNo,
+        full_name: fullName.trim(),
+        email: email.trim().toLowerCase(),
+        phone,
+        password,
+        password_confirm: confirmPassword,
+        organization_id: selectedBranch?.id,
+      });
       router.replace('/(app)/(tabs)/home');
     } catch (err: any) {
       setErrors({ general: err.message ?? 'Kayıt başarısız. Lütfen tekrar deneyin.' });
@@ -118,19 +165,48 @@ export default function CitizenRegisterScreen() {
             <SelectInput
               label="STK Seçiniz"
               labelSuffix="(opsiyonel)"
-              options={STK_OPTIONS}
-              value={selectedStk}
-              onSelect={setSelectedStk}
-              placeholder="STK seçiniz"
+              options={orgNames}
+              value={selectedOrgName}
+              onSelect={setSelectedOrgName}
+              placeholder={orgNames.length === 0 ? 'Yükleniyor...' : 'STK seçiniz'}
+              clearable
             />
 
-            <Input
-              label={<Text>Yetkinlikleriniz Nedir? <Text style={styles.optionalTag}>(opsiyonel)</Text></Text> as any}
-              placeholder="Örn: İlk yardım, Arama kurtarma, Lojistik"
-              value={expertise}
-              onChangeText={setExpertise}
-              autoCapitalize="sentences"
-            />
+            {selectedOrgName ? (
+              <SelectInput
+                label="Şehir"
+                options={orgCities}
+                value={selectedCity}
+                onSelect={setSelectedCity}
+                placeholder={orgCities.length === 0 ? 'Yükleniyor...' : 'Şehir seçiniz'}
+                error={submitted ? errors.city : undefined}
+              />
+            ) : null}
+
+            {selectedCity ? (
+              <SelectInput
+                label="Şube"
+                options={orgBranches.map((b) => b.district)}
+                value={selectedBranch?.district ?? ''}
+                onSelect={(district) => {
+                  const branch = orgBranches.find((b) => b.district === district) ?? null;
+                  setSelectedBranch(branch);
+                }}
+                placeholder={orgBranches.length === 0 ? 'Yükleniyor...' : 'Şube seçiniz'}
+                error={submitted ? errors.branch : undefined}
+              />
+            ) : null}
+
+            {selectedOrgName ? (
+              <Input
+                label={isVolunteer ? 'Yetkinlikleriniz Nedir?' : <Text>Yetkinlikleriniz Nedir? <Text style={styles.optionalTag}>(opsiyonel)</Text></Text> as any}
+                placeholder="Örn: İlk yardım, ..."
+                value={expertise}
+                onChangeText={setExpertise}
+                autoCapitalize="sentences"
+                error={submitted ? errors.expertise : undefined}
+              />
+            ) : null}
           </View>
 
           <Button title="Kayıt Ol" onPress={handleRegister} loading={loading} style={styles.button} />
@@ -170,8 +246,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(239,68,68,0.3)', borderRadius: BorderRadius.md, padding: Spacing.sm,
   },
   errorBannerText: { color: Colors.error, fontSize: FontSize.sm, flex: 1 },
-
-  // Opsiyonel bölüm
   optionalSection: {
     borderWidth: 1,
     borderColor: 'rgba(34,197,94,0.3)',
@@ -181,29 +255,10 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
     marginTop: Spacing.xs,
   },
-  optionalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-  },
-  optionalTitle: {
-    fontSize: FontSize.sm,
-    fontWeight: '700',
-    color: Colors.success,
-  },
-  optionalDesc: {
-    fontSize: FontSize.xs,
-    color: Colors.textSecondary,
-    lineHeight: 18,
-    marginTop: -Spacing.xs,
-  },
-  optionalTag: {
-    fontSize: FontSize.xs,
-    color: Colors.textMuted,
-    fontWeight: '400',
-  },
-
-
+  optionalHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  optionalTitle: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.success },
+  optionalDesc: { fontSize: FontSize.xs, color: Colors.textSecondary, lineHeight: 18, marginTop: -Spacing.xs },
+  optionalTag: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '400' },
   button: { marginTop: Spacing.xs, backgroundColor: Colors.primary },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.lg, marginBottom: Spacing.md },
   footerText: { color: Colors.textSecondary, fontSize: FontSize.sm },

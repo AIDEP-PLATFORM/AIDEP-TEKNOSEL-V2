@@ -1,6 +1,6 @@
 import logging
 import time
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
@@ -47,11 +47,13 @@ app.add_middleware(
 )
 
 
-app.include_router(auth.router)
-app.include_router(organizations.router)
-app.include_router(volunteers.router)
-app.include_router(map_router.router)
-app.include_router(ai_router.router)
+api_router = APIRouter(prefix="/api/v1")
+api_router.include_router(auth.router)
+api_router.include_router(organizations.router)
+api_router.include_router(volunteers.router)
+api_router.include_router(map_router.router)
+api_router.include_router(ai_router.router)
+app.include_router(api_router)
 
 
 # ─── Middleware: istek/yanıt süresi logu ───────────────────────

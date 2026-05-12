@@ -29,11 +29,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   loadFromStorage: async () => {
-    const userStr = await storage.getString('user');
-    const tokensStr = await storage.getString('tokens');
-    if (userStr && tokensStr) {
-      set({ user: JSON.parse(userStr), tokens: JSON.parse(tokensStr) });
+    try {
+      const userStr = await storage.getString('user');
+      const tokensStr = await storage.getString('tokens');
+      if (userStr && tokensStr) {
+        set({ user: JSON.parse(userStr), tokens: JSON.parse(tokensStr) });
+      }
+    } catch {
+      // storage hatası → temiz başla
+    } finally {
+      set({ isLoading: false });
     }
-    set({ isLoading: false });
   },
 }));

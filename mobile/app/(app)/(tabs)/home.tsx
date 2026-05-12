@@ -75,13 +75,13 @@ export default function HomeScreen() {
 
       {/* SOS + İkili Kartlar */}
       <View style={styles.actionsGroup}>
-      <TouchableOpacity style={styles.sosButton} activeOpacity={0.85}>
+      <TouchableOpacity style={styles.sosButton} activeOpacity={0.85} onPress={() => router.push('/(app)/(tabs)/report')}>
         <View style={styles.sosIconBox}>
-          <Text style={styles.sosIconText}>SOS</Text>
+          <Ionicons name="camera" size={26} color={Colors.error} />
         </View>
         <View>
-          <Text style={styles.sosTitle}>Yardım İste</Text>
-          <Text style={styles.sosSub}>Acil durum bildirimi gönder</Text>
+          <Text style={styles.sosTitle}>Hasar Raporla</Text>
+          <Text style={styles.sosSub}>Hasar bildirimi gönder</Text>
         </View>
       </TouchableOpacity>
 
