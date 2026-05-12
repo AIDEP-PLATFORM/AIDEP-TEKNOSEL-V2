@@ -1,52 +1,93 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { router } from 'expo-router';
+import { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView, Alert } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/use-auth';
 import { Input } from '@/components/common/input';
 import { Button } from '@/components/common/button';
 import { SelectInput } from '@/components/common/select-input';
 import { validators } from '@/utils/validators';
+import { organizationService, OrganizationBranch } from '@/services/organization.service';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, BorderRadius } from '@/constants/theme';
 
-const GOREV_OPTIONS = ['Yönetim Görevlisi', 'Saha Görevlisi'];
-
-const STK_OPTIONS = [
-  'AKUT Arama Kurtarma Derneği',
-  'Kızılay',
-  'İHH İnsani Yardım Vakfı',
-  'ARKS Arama Kurtarma',
-  'TEGV',
-];
-
 export default function StkRegisterScreen() {
   const insets = useSafeAreaInsets();
-  const { register } = useAuth();
+  const { registerNgoManager, registerNgoStaff } = useAuth();
+  const { type } = useLocalSearchParams<{ type: 'yonetim' | 'saha' }>();
+
+  const isYonetim = type === 'yonetim';
+
+  // Kişisel bilgiler
   const [fullName, setFullName] = useState('');
   const [tcNo, setTcNo] = useState('');
-  const [selectedGorev, setSelectedGorev] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [selectedStk, setSelectedStk] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Kurum cascade
+  const [orgNames, setOrgNames] = useState<string[]>([]);
+  const [selectedOrgName, setSelectedOrgName] = useState('');
+  const [orgCities, setOrgCities] = useState<string[]>([]);
+  const [selectedCity, setSelectedCity] = useState('');
+  const [orgBranches, setOrgBranches] = useState<OrganizationBranch[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<OrganizationBranch | null>(null);
+
+  // Yönetim personeli ekstra
+  const [faaliyetAlani, setFaaliyetAlani] = useState('');
+  const [adres, setAdres] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // STK isimlerini yükle
+  useEffect(() => {
+    organizationService.getNames('STK').then(setOrgNames).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (selectedOrgName) {
+      setSelectedCity('');
+      setSelectedBranch(null);
+      setOrgBranches([]);
+      organizationService.getCities(selectedOrgName, 'STK').then(setOrgCities).catch(() => {});
+    } else {
+      setOrgCities([]);
+      setOrgBranches([]);
+      setSelectedCity('');
+      setSelectedBranch(null);
+    }
+  }, [selectedOrgName]);
+
+  useEffect(() => {
+    if (selectedOrgName && selectedCity) {
+      setSelectedBranch(null);
+      organizationService.getBranches(selectedOrgName, selectedCity, 'STK').then(setOrgBranches).catch(() => {});
+    } else {
+      setOrgBranches([]);
+      setSelectedBranch(null);
+    }
+  }, [selectedCity]);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
     if (!validators.required(fullName)) newErrors.fullName = 'Ad soyad zorunludur';
     if (!validators.required(tcNo)) newErrors.tcNo = 'TC Kimlik No zorunludur';
     else if (!validators.tcNo(tcNo)) newErrors.tcNo = 'Geçerli bir TC Kimlik No girin (11 hane)';
-    if (!validators.required(selectedGorev)) newErrors.gorev = 'Görev seçimi zorunludur';
+    if (!validators.required(selectedOrgName)) newErrors.orgName = 'STK / Kurum seçimi zorunludur';
+    if (!selectedCity) newErrors.city = 'Şehir seçimi zorunludur';
+    if (!selectedBranch) newErrors.branch = 'Şube seçimi zorunludur';
+    if (isYonetim) {
+      if (!validators.required(faaliyetAlani)) newErrors.faaliyetAlani = 'Faaliyet alanı zorunludur';
+      if (!validators.required(adres)) newErrors.adres = 'Açık adres zorunludur';
+    }
     if (!validators.required(email)) newErrors.email = 'E-posta zorunludur';
     else if (!validators.email(email)) newErrors.email = 'Geçerli bir e-posta girin';
     if (!validators.required(phone)) newErrors.phone = 'Telefon zorunludur';
     else if (!validators.phone(phone)) newErrors.phone = 'Geçerli bir telefon numarası girin';
-    if (!validators.required(selectedStk)) newErrors.stk = 'STK / Kurum seçimi zorunludur';
     if (!validators.required(password)) newErrors.password = 'Şifre zorunludur';
     else if (!validators.password(password)) newErrors.password = 'Şifre en az 8 karakter olmalıdır';
     if (password !== confirmPassword) newErrors.confirmPassword = 'Şifreler eşleşmiyor';
@@ -60,14 +101,34 @@ export default function StkRegisterScreen() {
     setLoading(true);
     setErrors({});
     try {
-      await register({
-        fullName: fullName.trim(),
-        email: email.trim().toLowerCase(),
-        password,
-        role: 'stk',
-        phone,
-      });
-      router.replace('/(app)/(tabs)/home');
+      if (isYonetim) {
+        await registerNgoManager({
+          tc_no: tcNo,
+          full_name: fullName.trim(),
+          organization_id: selectedBranch!.id,
+          email: email.trim().toLowerCase(),
+          phone,
+          password,
+          password_confirm: confirmPassword,
+          activity_areas: faaliyetAlani.split(',').map((s) => s.trim()).filter(Boolean),
+          address: adres || undefined,
+        });
+      } else {
+        await registerNgoStaff({
+          tc_no: tcNo,
+          full_name: fullName.trim(),
+          organization_id: selectedBranch!.id,
+          email: email.trim().toLowerCase(),
+          phone,
+          password,
+          password_confirm: confirmPassword,
+        });
+      }
+      Alert.alert(
+        'Kayıt Alındı',
+        'Kaydınız başarıyla alındı. Onay sürecinden geçtikten sonra giriş yapabilirsiniz.',
+        [{ text: 'Tamam', onPress: () => router.replace('/(auth)/login') }]
+      );
     } catch (err: any) {
       setErrors({ general: err.message ?? 'Kayıt başarısız. Lütfen tekrar deneyin.' });
     } finally {
@@ -87,9 +148,9 @@ export default function StkRegisterScreen() {
             <Ionicons name="arrow-back" size={22} color={Colors.text} />
           </TouchableOpacity>
           <View style={styles.iconBox}>
-            <Ionicons name="people-outline" size={28} color={Colors.primary} />
+            <Ionicons name={isYonetim ? 'briefcase-outline' : 'people-outline'} size={28} color={Colors.primary} />
           </View>
-          <Text style={styles.title}>STK Kaydı</Text>
+          <Text style={styles.title}>{isYonetim ? 'STK Yönetim Personeli' : 'STK Saha Personeli'}</Text>
           <Text style={styles.subtitle}>Yeni hesap oluşturun</Text>
         </View>
 
@@ -101,85 +162,88 @@ export default function StkRegisterScreen() {
             </View>
           )}
 
-          <Input
-            label="Ad Soyad"
-            placeholder="Adınız Soyadınız"
-            value={fullName}
-            onChangeText={setFullName}
-            autoCapitalize="words"
-            error={submitted ? errors.fullName : undefined}
-          />
-          <Input
-            label="TC Kimlik No"
-            placeholder="12345678901"
-            value={tcNo}
-            onChangeText={setTcNo}
-            keyboardType="number-pad"
-            maxLength={11}
-            error={submitted ? errors.tcNo : undefined}
-          />
+          <Input label="Ad Soyad" placeholder="Adınız Soyadınız" value={fullName} onChangeText={setFullName} autoCapitalize="words" error={submitted ? errors.fullName : undefined} />
+          <Input label="TC Kimlik No" placeholder="12345678901" value={tcNo} onChangeText={setTcNo} keyboardType="number-pad" maxLength={11} error={submitted ? errors.tcNo : undefined} />
 
+          {/* Kurum cascade */}
           <SelectInput
             label="STK / Kurum"
-            options={STK_OPTIONS}
-            value={selectedStk}
-            onSelect={setSelectedStk}
-            placeholder="STK seçiniz"
-            error={submitted ? errors.stk : undefined}
+            options={orgNames}
+            value={selectedOrgName}
+            onSelect={setSelectedOrgName}
+            placeholder={orgNames.length === 0 ? 'Yükleniyor...' : 'STK seçiniz'}
+            error={submitted ? errors.orgName : undefined}
           />
 
-          <SelectInput
-            label="Görevinizi Seçiniz"
-            options={GOREV_OPTIONS}
-            value={selectedGorev}
-            onSelect={setSelectedGorev}
-            placeholder="Görev seçiniz"
-            error={submitted ? errors.gorev : undefined}
-          />
+          {selectedOrgName ? (
+            <SelectInput
+              label="Şehir"
+              options={orgCities}
+              value={selectedCity}
+              onSelect={setSelectedCity}
+              placeholder={orgCities.length === 0 ? 'Yükleniyor...' : 'Şehir seçiniz'}
+              error={submitted ? errors.city : undefined}
+            />
+          ) : null}
+
+          {selectedCity ? (
+            <SelectInput
+              label="Şube"
+              options={orgBranches.map((b) => b.district)}
+              value={selectedBranch?.district ?? ''}
+              onSelect={(district) => {
+                const branch = orgBranches.find((b) => b.district === district) ?? null;
+                setSelectedBranch(branch);
+              }}
+              placeholder={orgBranches.length === 0 ? 'Yükleniyor...' : 'Şube seçiniz'}
+              error={submitted ? errors.branch : undefined}
+            />
+          ) : null}
+
+          {isYonetim && (
+            <Input
+              label="STK Faaliyet Alanı"
+              placeholder="Örn: Arama kurtarma, Lojistik (virgülle ayırın)"
+              value={faaliyetAlani}
+              onChangeText={setFaaliyetAlani}
+              autoCapitalize="sentences"
+              error={submitted ? errors.faaliyetAlani : undefined}
+            />
+          )}
+
+          {isYonetim && (
+            <Input
+              label="Açık Adres"
+              placeholder="Mahalle, sokak, bina no..."
+              value={adres}
+              onChangeText={setAdres}
+              autoCapitalize="sentences"
+              error={submitted ? errors.adres : undefined}
+            />
+          )}
 
           <Input
-            label="E-posta"
-            placeholder="ornek@email.com"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
+            label="E-posta" placeholder="ornek@email.com" value={email} onChangeText={setEmail}
+            keyboardType="email-address" autoCapitalize="none" autoCorrect={false}
             error={submitted ? errors.email : undefined}
           />
           <Input
-            label="Telefon"
-            placeholder="05xx xxx xx xx"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-            error={submitted ? errors.phone : undefined}
+            label="Telefon" placeholder="05xx xxx xx xx" value={phone} onChangeText={setPhone}
+            keyboardType="phone-pad" error={submitted ? errors.phone : undefined}
           />
 
           <Input
-            label="Şifre"
-            placeholder="••••••••"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPassword}
-            error={submitted ? errors.password : undefined}
+            label="Şifre" placeholder="••••••••" value={password} onChangeText={setPassword}
+            secureTextEntry={!showPassword} error={submitted ? errors.password : undefined}
             rightIcon={
               <TouchableOpacity onPress={() => setShowPassword((v) => !v)}>
-                <Ionicons
-                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                  size={20}
-                  color={Colors.textSecondary}
-                />
+                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={Colors.textSecondary} />
               </TouchableOpacity>
             }
           />
           <Input
-            label="Şifre Tekrar"
-            placeholder="••••••••"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry={!showPassword}
-            error={submitted ? errors.confirmPassword : undefined}
+            label="Şifre Tekrar" placeholder="••••••••" value={confirmPassword} onChangeText={setConfirmPassword}
+            secureTextEntry={!showPassword} error={submitted ? errors.confirmPassword : undefined}
           />
 
           <Button title="Kayıt Ol" onPress={handleRegister} loading={loading} style={styles.button} />
@@ -220,10 +284,7 @@ const styles = StyleSheet.create({
   },
   errorBannerText: { color: Colors.error, fontSize: FontSize.sm, flex: 1 },
   button: { marginTop: Spacing.xs, backgroundColor: Colors.primary },
-  footer: {
-    flexDirection: 'row', justifyContent: 'center',
-    marginTop: Spacing.lg, marginBottom: Spacing.md,
-  },
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: Spacing.lg, marginBottom: Spacing.md },
   footerText: { color: Colors.textSecondary, fontSize: FontSize.sm },
   footerLink: { color: Colors.primary, fontSize: FontSize.sm, fontWeight: '600' },
 });

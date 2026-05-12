@@ -1,29 +1,69 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/hooks/use-auth';
 import { Input } from '@/components/common/input';
 import { Button } from '@/components/common/button';
+import { SelectInput } from '@/components/common/select-input';
 import { validators } from '@/utils/validators';
+import { organizationService, OrganizationBranch } from '@/services/organization.service';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, BorderRadius } from '@/constants/theme';
 
 export default function AfadRegisterScreen() {
   const insets = useSafeAreaInsets();
-  const { register } = useAuth();
+  const { registerOfficial } = useAuth();
+
   const [fullName, setFullName] = useState('');
   const [tcNo, setTcNo] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [badgeNumber, setBadgeNumber] = useState('');
-  const [unit, setUnit] = useState('');
+  const [adres, setAdres] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Kurum cascade
+  const [orgNames, setOrgNames] = useState<string[]>([]);
+  const [selectedOrgName, setSelectedOrgName] = useState('');
+  const [orgCities, setOrgCities] = useState<string[]>([]);
+  const [selectedCity, setSelectedCity] = useState('');
+  const [orgBranches, setOrgBranches] = useState<OrganizationBranch[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<OrganizationBranch | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    organizationService.getNames('OFFICIAL').then(setOrgNames).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (selectedOrgName) {
+      setSelectedCity('');
+      setSelectedBranch(null);
+      setOrgBranches([]);
+      organizationService.getCities(selectedOrgName, 'OFFICIAL').then(setOrgCities).catch(() => {});
+    } else {
+      setOrgCities([]);
+      setOrgBranches([]);
+      setSelectedCity('');
+      setSelectedBranch(null);
+    }
+  }, [selectedOrgName]);
+
+  useEffect(() => {
+    if (selectedOrgName && selectedCity) {
+      setSelectedBranch(null);
+      organizationService.getBranches(selectedOrgName, selectedCity, 'OFFICIAL').then(setOrgBranches).catch(() => {});
+    } else {
+      setOrgBranches([]);
+      setSelectedBranch(null);
+    }
+  }, [selectedCity]);
 
   const validate = () => {
     const newErrors: Record<string, string> = {};
@@ -35,7 +75,9 @@ export default function AfadRegisterScreen() {
     if (!validators.required(phone)) newErrors.phone = 'Telefon zorunludur';
     else if (!validators.phone(phone)) newErrors.phone = 'Geçerli bir telefon numarası girin';
     if (!validators.required(badgeNumber)) newErrors.badgeNumber = 'Sicil numarası zorunludur';
-    if (!validators.required(unit)) newErrors.unit = 'Birim zorunludur';
+    if (!validators.required(selectedOrgName)) newErrors.orgName = 'Kurum seçimi zorunludur';
+    if (!selectedCity) newErrors.city = 'Şehir seçimi zorunludur';
+    if (!selectedBranch) newErrors.branch = 'Şube seçimi zorunludur';
     if (!validators.required(password)) newErrors.password = 'Şifre zorunludur';
     else if (!validators.password(password)) newErrors.password = 'Şifre en az 8 karakter olmalıdır';
     if (password !== confirmPassword) newErrors.confirmPassword = 'Şifreler eşleşmiyor';
@@ -49,7 +91,17 @@ export default function AfadRegisterScreen() {
     setLoading(true);
     setErrors({});
     try {
-      await register({ fullName: fullName.trim(), email: email.trim().toLowerCase(), password, role: 'afad', phone });
+      await registerOfficial({
+        tc_no: tcNo,
+        full_name: fullName.trim(),
+        email: email.trim().toLowerCase(),
+        phone,
+        password,
+        password_confirm: confirmPassword,
+        organization_id: selectedBranch!.id,
+        registration_number: badgeNumber.trim(),
+        address: adres || undefined,
+      });
       router.replace('/(app)/(tabs)/home');
     } catch (err: any) {
       setErrors({ general: err.message ?? 'Kayıt başarısız. Lütfen tekrar deneyin.' });
@@ -85,8 +137,44 @@ export default function AfadRegisterScreen() {
           <Input label="TC Kimlik No" placeholder="12345678901" value={tcNo} onChangeText={setTcNo} keyboardType="number-pad" maxLength={11} error={submitted ? errors.tcNo : undefined} />
           <Input label="Kurum E-postası" placeholder="isim@afad.gov.tr" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} error={submitted ? errors.email : undefined} />
           <Input label="Telefon" placeholder="05xx xxx xx xx" value={phone} onChangeText={setPhone} keyboardType="phone-pad" error={submitted ? errors.phone : undefined} />
-          <Input label="Sicil Numarası" placeholder="Sicil numaranız" value={badgeNumber} onChangeText={setBadgeNumber} autoCapitalize="characters" error={submitted ? errors.badgeNumber : undefined} />
-          <Input label="Birim / Konum" placeholder="Örn: İstanbul AFAD İl Müdürlüğü" value={unit} onChangeText={setUnit} autoCapitalize="sentences" error={submitted ? errors.unit : undefined} />
+          <Input label="Sicil Numarası" placeholder="10 haneli sicil numaranız" value={badgeNumber} onChangeText={setBadgeNumber} keyboardType="number-pad" maxLength={10} error={submitted ? errors.badgeNumber : undefined} />
+
+          <SelectInput
+            label="Kurum"
+            options={orgNames}
+            value={selectedOrgName}
+            onSelect={setSelectedOrgName}
+            placeholder={orgNames.length === 0 ? 'Yükleniyor...' : 'Kurum seçiniz'}
+            error={submitted ? errors.orgName : undefined}
+          />
+
+          {selectedOrgName ? (
+            <SelectInput
+              label="Şehir"
+              options={orgCities}
+              value={selectedCity}
+              onSelect={setSelectedCity}
+              placeholder={orgCities.length === 0 ? 'Yükleniyor...' : 'Şehir seçiniz'}
+              error={submitted ? errors.city : undefined}
+            />
+          ) : null}
+
+          {selectedCity ? (
+            <SelectInput
+              label="Şube / İlçe"
+              options={orgBranches.map((b) => b.district)}
+              value={selectedBranch?.district ?? ''}
+              onSelect={(district) => {
+                const branch = orgBranches.find((b) => b.district === district) ?? null;
+                setSelectedBranch(branch);
+              }}
+              placeholder={orgBranches.length === 0 ? 'Yükleniyor...' : 'Şube seçiniz'}
+              error={submitted ? errors.branch : undefined}
+            />
+          ) : null}
+
+          <Input label="Adres (opsiyonel)" placeholder="Mahalle, sokak, bina no..." value={adres} onChangeText={setAdres} autoCapitalize="sentences" />
+
           <Input
             label="Şifre" placeholder="••••••••" value={password} onChangeText={setPassword}
             secureTextEntry={!showPassword} error={submitted ? errors.password : undefined}

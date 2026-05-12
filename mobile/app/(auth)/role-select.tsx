@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,7 +8,6 @@ const ROLES = [
   {
     key: 'citizen',
     label: 'Vatandaş',
-    tag: 'VATANDAŞ',
     icon: 'person-outline' as const,
     description: 'Hasar bildirimi yapın, yardım talep edin',
     registerPath: '/(auth)/citizen-register',
@@ -17,20 +16,28 @@ const ROLES = [
     border: 'rgba(6,182,212,0.3)',
   },
   {
-    key: 'stk',
-    label: 'STK Çalışanı',
-    tag: 'STK',
-    icon: 'people-outline' as const,
-    description: 'Sivil toplum kuruluşu görevlisi',
-    registerPath: '/(auth)/stk-register',
+    key: 'stk_manager',
+    label: 'STK Yönetim Personeli',
+    icon: 'briefcase-outline' as const,
+    description: 'STK kurum yöneticisi veya koordinatörü',
+    registerPath: '/(auth)/stk-register?type=yonetim',
     color: '#a78bfa',
     bg: 'rgba(167,139,250,0.12)',
     border: 'rgba(167,139,250,0.3)',
   },
   {
+    key: 'stk_field',
+    label: 'STK Saha Personeli',
+    icon: 'people-outline' as const,
+    description: 'Saha operasyonlarında görev alan personel',
+    registerPath: '/(auth)/stk-register?type=saha',
+    color: '#34d399',
+    bg: 'rgba(52,211,153,0.12)',
+    border: 'rgba(52,211,153,0.3)',
+  },
+  {
     key: 'afad',
     label: 'AFAD / UMKE',
-    tag: 'KURUM',
     icon: 'shield-outline' as const,
     description: 'Resmi afet yönetim görevlisi',
     registerPath: '/(auth)/afad-register',
@@ -43,10 +50,10 @@ const ROLES = [
 export default function RoleSelectScreen() {
   const insets = useSafeAreaInsets();
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
 
       {/* Üst header */}
-      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
+      <View style={styles.header}>
         <View style={styles.logoBox}>
           <Ionicons name="shield-checkmark" size={36} color={Colors.primary} />
         </View>
@@ -54,37 +61,38 @@ export default function RoleSelectScreen() {
         <Text style={styles.logoSub}>Afet Yönetim Platformu</Text>
       </View>
 
-      {/* Alt kart — header üzerine taşıyor */}
-      <ScrollView
-        style={styles.sheet}
-        contentContainerStyle={styles.sheetContent}
-        showsVerticalScrollIndicator={false}
-      >
+      {/* Alt kart */}
+      <View style={styles.sheet}>
         <View style={styles.handle} />
         <Text style={styles.sectionLabel}>KULLANICI ROLÜNÜZÜ SEÇİN</Text>
 
-        {ROLES.map((role) => (
-          <TouchableOpacity
-            key={role.key}
-            style={[styles.card, { backgroundColor: role.bg, borderColor: role.border }]}
-            onPress={() => router.push(role.registerPath as any)}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.cardIcon, { backgroundColor: role.bg, borderColor: role.border }]}>
-              <Ionicons name={role.icon} size={26} color={role.color} />
-            </View>
-            <View style={styles.cardContent}>
-              <Text style={[styles.cardTitle, { color: role.color }]}>{role.label}</Text>
-              <Text style={styles.cardDesc}>{role.description}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={role.color} />
-          </TouchableOpacity>
-        ))}
+        <View style={styles.cardsContainer}>
+          {ROLES.map((role) => (
+            <TouchableOpacity
+              key={role.key}
+              style={[styles.card, { backgroundColor: role.bg, borderColor: role.border }]}
+              onPress={() => router.push(role.registerPath as any)}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.cardIcon, { backgroundColor: role.bg, borderColor: role.border }]}>
+                <Ionicons name={role.icon} size={22} color={role.color} />
+              </View>
+              <View style={styles.cardContent}>
+                <Text style={[styles.cardTitle, { color: role.color }]}>{role.label}</Text>
+                <Text style={styles.cardDesc}>{role.description}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={role.color} />
+            </TouchableOpacity>
+          ))}
+        </View>
 
-        <Text style={styles.disclaimer}>
-          Rol seçiminiz hesabınıza kaydedilir. Daha sonra profil ayarlarından değiştirebilirsiniz.
-        </Text>
-      </ScrollView>
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>Zaten hesabınız var mı? </Text>
+          <TouchableOpacity onPress={() => router.replace('/(auth)/login')}>
+            <Text style={styles.footerLink}>Giriş Yap</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
     </View>
   );
@@ -99,6 +107,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingBottom: 56,
     paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
   },
   logoBox: {
     width: 72,
@@ -127,12 +136,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#0e2137',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    marginTop: -28,
-  },
-  sheetContent: {
-    padding: Spacing.lg,
+    marginTop: -16,
+    paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
-    gap: Spacing.md,
+    paddingBottom: Spacing.lg,
   },
   handle: {
     width: 40,
@@ -147,19 +154,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.textMuted,
     letterSpacing: 1,
-    marginBottom: Spacing.xs,
+    marginBottom: Spacing.sm,
+  },
+  cardsContainer: {
+    flex: 1,
+    gap: Spacing.sm,
   },
   card: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: BorderRadius.xl,
-    padding: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     borderWidth: 1,
-    gap: Spacing.md,
+    gap: Spacing.sm,
   },
   cardIcon: {
-    width: 52,
-    height: 52,
+    width: 44,
+    height: 44,
     borderRadius: BorderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -167,22 +180,30 @@ const styles = StyleSheet.create({
   },
   cardContent: {
     flex: 1,
-    gap: 4,
+    gap: 3,
   },
   cardTitle: {
-    fontSize: FontSize.md,
+    fontSize: FontSize.sm,
     fontWeight: '700',
   },
   cardDesc: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    lineHeight: 16,
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+  },
+  footerText: {
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
-    lineHeight: 18,
   },
-  disclaimer: {
-    fontSize: FontSize.xs,
-    color: Colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginTop: Spacing.xs,
+  footerLink: {
+    fontSize: FontSize.sm,
+    color: Colors.primary,
+    fontWeight: '600',
   },
 });

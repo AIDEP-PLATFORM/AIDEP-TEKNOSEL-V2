@@ -10,10 +10,11 @@ interface SelectInputProps {
   onSelect: (value: string) => void;
   placeholder?: string;
   error?: string;
-  labelSuffix?: string; // "(opsiyonel)" gibi
+  labelSuffix?: string;
+  clearable?: boolean;
 }
 
-export function SelectInput({ label, options, value, onSelect, placeholder = 'Seçiniz', error, labelSuffix }: SelectInputProps) {
+export function SelectInput({ label, options, value, onSelect, placeholder = 'Seçiniz', error, labelSuffix, clearable }: SelectInputProps) {
   const insets = useSafeAreaInsets();
   const [visible, setVisible] = require('react').useState(false);
 
@@ -34,7 +35,18 @@ export function SelectInput({ label, options, value, onSelect, placeholder = 'Se
         <Text style={[styles.selectorText, !value && styles.placeholder]}>
           {value || placeholder}
         </Text>
-        <Ionicons name="chevron-down" size={18} color={Colors.textSecondary} />
+        <View style={styles.selectorRight}>
+          {clearable && value ? (
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation(); onSelect(''); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle" size={18} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          ) : (
+            <Ionicons name="chevron-down" size={18} color={Colors.textSecondary} />
+          )}
+        </View>
       </TouchableOpacity>
 
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -93,8 +105,9 @@ const styles = StyleSheet.create({
     padding: 14, backgroundColor: 'rgba(15,23,42,0.8)',
   },
   selectorError: { borderColor: Colors.error },
-  selectorText: { fontSize: FontSize.md, color: Colors.text },
+  selectorText: { fontSize: FontSize.md, color: Colors.text, flex: 1 },
   placeholder: { color: Colors.textSecondary },
+  selectorRight: { marginLeft: 8 },
   errorText: { fontSize: 12, color: Colors.error },
 
   // Modal
