@@ -165,6 +165,16 @@ async def _update_request_damage_score(db: AsyncSession, req: HelpRequest) -> No
         )
 
 
+async def get_request_photos(db: AsyncSession, request_id) -> list[DamagePhoto]:
+    """Bir talebe ait tüm hasar fotoğraflarını tarih sırasıyla döndürür."""
+    result = await db.execute(
+        select(DamagePhoto)
+        .where(DamagePhoto.request_id == request_id)
+        .order_by(DamagePhoto.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
 def _ext_from_content_type(content_type: str) -> str:
     return {
         "image/jpeg": ".jpg",

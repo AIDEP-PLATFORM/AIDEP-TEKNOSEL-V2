@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from core.config import settings
+from models.photo import DamagePhoto
 from models.request import (
     Assignment,
     AssignmentStatus,
@@ -108,7 +109,8 @@ async def _score_request(db: AsyncSession, req: HelpRequest) -> None:
 
 def _request_query():
     return select(HelpRequest).options(
-        selectinload(HelpRequest.assignment)
+        selectinload(HelpRequest.assignment),
+        selectinload(HelpRequest.photos),
     )
 
 
