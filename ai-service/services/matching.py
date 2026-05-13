@@ -95,10 +95,13 @@ async def _route_safety_score(
     dest_lat: float, dest_lon: float,
     area_damage_score: float,
 ) -> float:
-    origin_dmg, dest_dmg = await asyncio.gather(
+    results = await asyncio.gather(
         get_grid_score(origin_lat, origin_lon),
         get_grid_score(dest_lat, dest_lon),
+        return_exceptions=True,
     )
+    origin_dmg = float(results[0]) if not isinstance(results[0], Exception) else 0.0
+    dest_dmg   = float(results[1]) if not isinstance(results[1], Exception) else 0.0
     route_dmg = origin_dmg * 0.25 + dest_dmg * 0.50 + area_damage_score * 0.25
     return round(max(0.0, 1.0 - route_dmg), 4)
 

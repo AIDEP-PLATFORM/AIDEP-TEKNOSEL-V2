@@ -87,6 +87,7 @@ async def run_matching(db: AsyncSession, current_user: User) -> dict:
             resp = await client.post(
                 f"{settings.AI_SERVICE_URL}/ai/match",
                 json={"requests": requests_payload, "volunteers": teams_payload},
+                headers={"X-API-Key": settings.AI_INTERNAL_API_KEY},
             )
             resp.raise_for_status()
             match_result = resp.json()

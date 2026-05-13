@@ -76,5 +76,11 @@ async def score_request(req: PriorityRequest, _semaphore: asyncio.Semaphore | No
 async def score_requests_bulk(requests: list[PriorityRequest]) -> list[PriorityResponse]:
     sem = asyncio.Semaphore(20)
     tasks = [score_request(r, sem) for r in requests]
-    results = await asyncio.gather(*tasks)
-    return sorted(results, key=lambda r: r.priority_score, reverse=True)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    responses = []
+    for req, result in zip(requests, results):
+        if isinstance(result, Exception):
+            logger.error("Toplu skorlama hatasi | request=%s hata=%s", req.request_id, result)
+            continue
+        responses.append(result)
+    return sorted(responses, key=lambda r: r.priority_score, reverse=True)
