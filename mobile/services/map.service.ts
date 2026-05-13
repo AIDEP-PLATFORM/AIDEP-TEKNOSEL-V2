@@ -18,6 +18,23 @@ export interface SafeAreaPoint {
   capacity: string | null;
 }
 
+export interface RouteStep {
+  instruction: string;
+  street_name: string;
+  distance_m: number;
+  duration_s: number;
+  location: [number, number]; // [lon, lat]
+  maneuver: string;
+}
+
+export interface RouteData {
+  distance_km: number;
+  duration_min: number;
+  geometry: [number, number][]; // [[lon, lat], ...]
+  damage_score: number;
+  steps: RouteStep[];
+}
+
 interface MapResponse<T> {
   count: number;
   cached: boolean;
@@ -33,5 +50,18 @@ export const mapService = {
   getSafeAreas: async (): Promise<SafeAreaPoint[]> => {
     const res = await apiClient.get<MapResponse<SafeAreaPoint>>('/map/safe-areas');
     return res.data ?? [];
+  },
+
+  getRoute: async (
+    fromLat: number,
+    fromLon: number,
+    toLat: number,
+    toLon: number,
+    token: string,
+  ): Promise<RouteData> => {
+    return apiClient.get<RouteData>(
+      `/map/route?from_lat=${fromLat}&from_lon=${fromLon}&to_lat=${toLat}&to_lon=${toLon}`,
+      token,
+    );
   },
 };

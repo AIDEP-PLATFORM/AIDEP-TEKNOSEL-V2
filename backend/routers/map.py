@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
@@ -8,6 +8,7 @@ from core.dependencies import get_current_user
 from models.user import User, UserRole
 from schemas.map import MapEarthquakesResponse, MapSafeAreasResponse, MapTeamsResponse
 from services import map_service
+from services.osrm_service import get_best_route
 
 logger = logging.getLogger(__name__)
 
@@ -55,3 +56,24 @@ async def get_team_locations(
 
     data = await map_service.get_team_locations(db)
     return MapTeamsResponse(count=len(data), data=data)
+
+
+@router.get("/route")
+async def calculate_route(
+    from_lat: float = Query(..., ge=-90, le=90),
+    from_lon: float = Query(..., ge=-180, le=180),
+    to_lat: float = Query(..., ge=-90, le=90),
+    to_lon: float = Query(..., ge=-180, le=180),
+    _: User = Depends(get_current_user),
+):
+    """İki nokta arasında OSRM ile rota hesaplar.
+    Hasar noktalarından kaçınan en güvenli rotayı döner.
+    Erişim: Tüm kayıtlı kullanıcılar (mobil navigasyon için).
+    """
+    route = await get_best_route(from_lat, from_lon, to_lat, to_lon, include_steps=True)
+    if not route:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Rota hesaplanamadı. OSRM servisi erişilemez.",
+        )
+    return route
