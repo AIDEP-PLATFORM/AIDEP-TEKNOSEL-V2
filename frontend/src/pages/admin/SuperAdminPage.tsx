@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import {
-  Box, Button, Flex, Text, Grid, Stack, Badge,
+  Box, Button, Flex, Text, Grid, Stack,
   Input, InputGroup, InputLeftElement, Select, Spinner,
   useToast,
 } from '@chakra-ui/react'
@@ -9,44 +9,38 @@ import {
   apiCreateOrganization, apiListOrganizations,
   type OrgType, type OrganizationCreate, type OrganizationRecord,
 } from '@/services/organizationAdminService'
+import {
+  apiAdminGetUsers, apiAdminGetPending,
+  apiAdminApprove, apiAdminDeactivate, apiAdminActivate,
+  getUserOrg, getUserCity,
+  type AdminUserResponse,
+} from '@/services/adminService'
 
 const MotionBox  = motion(Box)
 const MotionFlex = motion(Flex)
 
-// ── Tip tanımları ────────────────────────────────────────────────
-type Role = 'VOLUNTEER' | 'NGO' | 'afad' | 'umke'
-type Status = 'active' | 'pending' | 'suspended'
-
-interface User {
-  id: string
-  full_name: string
-  email: string
-  phone: string
-  role: Role
-  status: Status
-  created_at: string
-  il?: string
-  organization?: string
+// ── Rol config (gerçek backend rolleri) ─────────────────────────
+const roleConfig: Record<string, { label: string; color: string; bg: string }> = {
+  ADMIN:            { label: 'Admin',          color: '#f87171', bg: 'rgba(248,113,113,0.12)' },
+  NGO_MANAGER:      { label: 'STK Yönetici',   color: '#34d399', bg: 'rgba(52,211,153,0.12)'  },
+  NGO_STAFF:        { label: 'STK Personel',   color: '#6ee7b7', bg: 'rgba(110,231,183,0.12)' },
+  OFFICIAL_MANAGER: { label: 'Resmi Yönetici', color: '#60a5fa', bg: 'rgba(96,165,250,0.12)'  },
+  OFFICIAL_STAFF:   { label: 'Resmi Personel', color: '#93c5fd', bg: 'rgba(147,197,253,0.12)' },
+  VOLUNTEER:        { label: 'Gönüllü',        color: '#a78bfa', bg: 'rgba(167,139,250,0.12)' },
+  CITIZEN:          { label: 'Vatandaş',       color: '#9ca3af', bg: 'rgba(156,163,175,0.12)' },
 }
 
-// ── Mock kullanıcı verisi ────────────────────────────────────────
-const MOCK_USERS: User[] = [
-  { id:'U001', full_name:'Ayşe Kaya',        email:'ayse.kaya@akut.org.tr',      phone:'0532 111 2233', role:'VOLUNTEER', status:'active',    created_at:'2025-03-12', il:'İstanbul',  organization:'AKUT' },
-  { id:'U002', full_name:'Mehmet Demir',      email:'m.demir@ihh.org.tr',          phone:'0533 222 4455', role:'VOLUNTEER', status:'active',    created_at:'2025-03-18', il:'Ankara',    organization:'İHH' },
-  { id:'U003', full_name:'Fatma Şahin',       email:'fatma@hayatadestek.org',      phone:'0541 333 5566', role:'VOLUNTEER', status:'pending',   created_at:'2025-04-02', il:'İzmir',     organization:'Hayata Destek' },
-  { id:'U004', full_name:'Ali Yıldız',         email:'ali.yildiz@tegv.org',         phone:'0555 444 6677', role:'VOLUNTEER', status:'active',    created_at:'2025-02-28', il:'Bursa',     organization:'TEGV' },
-  { id:'U005', full_name:'Zeynep Arslan',     email:'z.arslan@ukam.org.tr',        phone:'0542 555 7788', role:'VOLUNTEER', status:'suspended', created_at:'2025-01-15', il:'Kocaeli',   organization:'UKAM' },
-  { id:'U006', full_name:'Hasan Çelik',       email:'hasan.celik@afad.gov.tr',     phone:'0312 440 1122', role:'afad',      status:'active',    created_at:'2025-01-08', il:'Ankara',    organization:'AFAD' },
-  { id:'U007', full_name:'Elif Koç',           email:'elif.koc@afad.gov.tr',        phone:'0232 489 3344', role:'afad',      status:'active',    created_at:'2025-01-10', il:'İzmir',     organization:'AFAD' },
-  { id:'U008', full_name:'Mustafa Öztürk',    email:'m.ozturk@umke.sag.gov.tr',   phone:'0216 570 5566', role:'umke',      status:'active',    created_at:'2025-02-05', il:'İstanbul',  organization:'UMKE' },
-  { id:'U009', full_name:'Seda Yılmaz',        email:'seda.yilmaz@umke.sag.gov.tr',phone:'0332 581 7788', role:'umke',      status:'pending',   created_at:'2025-04-15', il:'Konya',     organization:'UMKE' },
-  { id:'U010', full_name:'Burak Aktaş',        email:'b.aktas@kizilay.org.tr',      phone:'0312 430 9900', role:'NGO',       status:'active',    created_at:'2025-01-20', il:'Ankara',    organization:'Kızılay' },
-  { id:'U011', full_name:'Cansu Erdoğan',     email:'c.erdogan@kizilay.org.tr',    phone:'0212 430 1122', role:'NGO',       status:'active',    created_at:'2025-01-25', il:'İstanbul',  organization:'Kızılay' },
-  { id:'U012', full_name:'Tarık Bozkurt',     email:'tarik@hayatadestek.org',      phone:'0462 328 3344', role:'VOLUNTEER', status:'pending',   created_at:'2025-04-20', il:'Trabzon',   organization:'Hayata Destek' },
-  { id:'U013', full_name:'Merve Doğan',       email:'merve.dogan@afad.gov.tr',     phone:'0424 323 5566', role:'afad',      status:'active',    created_at:'2025-03-01', il:'Elazığ',    organization:'AFAD' },
-  { id:'U014', full_name:'Kerem Polat',        email:'kerem.polat@ihh.org.tr',      phone:'0506 789 1234', role:'VOLUNTEER', status:'active',    created_at:'2025-02-14', il:'İstanbul',  organization:'İHH' },
-  { id:'U015', full_name:'Neslihan Kurt',     email:'neslihan@akut.org.tr',        phone:'0536 987 4321', role:'VOLUNTEER', status:'active',    created_at:'2025-03-28', il:'Kocaeli',   organization:'AKUT' },
-]
+function getUserStatusDisplay(u: AdminUserResponse) {
+  if (!u.is_active && u.role === 'NGO_MANAGER')
+    return { label: 'Onay Bekliyor', color: '#fbbf24', dot: '#fbbf24' }
+  if (u.is_active)
+    return { label: 'Aktif', color: '#4ade80', dot: '#4ade80' }
+  return { label: 'Pasif', color: '#f87171', dot: '#f87171' }
+}
+
+function fmtDate(iso: string) {
+  try { return new Date(iso).toLocaleDateString('tr-TR') } catch { return iso }
+}
 
 // ── Sistem logları ───────────────────────────────────────────────
 const LOGS = [
@@ -62,19 +56,6 @@ const LOGS = [
   { id:10,time:'08:30:00', type:'system',  msg:'Günlük rapor oluşturuldu ve arşivlendi',                   color:'#34d399' },
 ]
 
-// ── Rol config ───────────────────────────────────────────────────
-const roleConfig: Record<Role, { label: string; color: string; bg: string }> = {
-  VOLUNTEER: { label: 'STK Yetkili',   color: '#34d399', bg: 'rgba(52,211,153,0.12)'  },
-  NGO:       { label: 'Resmi Yetkili', color: '#60a5fa', bg: 'rgba(96,165,250,0.12)'  },
-  afad:      { label: 'AFAD',          color: '#60a5fa', bg: 'rgba(96,165,250,0.12)'  },
-  umke:      { label: 'UMKE',          color: '#fbbf24', bg: 'rgba(251,191,36,0.12)'  },
-}
-
-const statusConfig: Record<Status, { label: string; color: string; dot: string }> = {
-  active:    { label: 'Aktif',      color: '#4ade80', dot: '#4ade80' },
-  pending:   { label: 'Beklemede',  color: '#fbbf24', dot: '#fbbf24' },
-  suspended: { label: 'Askıda',     color: '#f87171', dot: '#f87171' },
-}
 
 // ── Yardımcı bileşenler ──────────────────────────────────────────
 const SearchIcon = () => (
@@ -136,8 +117,9 @@ const BanIcon = () => (
 )
 
 // ── KPI kartı ────────────────────────────────────────────────────
-function StatCard({ label, value, sub, color, glow, icon }: {
+function StatCard({ label, value, sub, color, glow, icon, onClick }: {
   label: string; value: number|string; sub: string; color: string; glow: string; icon: string
+  onClick?: () => void
 }) {
   return (
     <MotionBox
@@ -147,6 +129,8 @@ function StatCard({ label, value, sub, color, glow, icon }: {
       whileHover={{ y: -3, boxShadow: `0 8px 32px ${glow}` } as any}
       transition={{ duration: 0.2 } as any}
       initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
+      onClick={onClick}
+      cursor={onClick ? 'pointer' : 'default'}
     >
       <Box position="absolute" top="-30px" right="-20px" w="90px" h="90px"
         borderRadius="full" bg={color} opacity={0.07} filter="blur(30px)" />
@@ -159,15 +143,35 @@ function StatCard({ label, value, sub, color, glow, icon }: {
         </Box>
         <Text fontSize="2xl" opacity={0.75}>{icon}</Text>
       </Flex>
+      {onClick && (
+        <Text fontSize="9px" color={color} opacity={0.6} mt={2} letterSpacing="wider">
+          GÖRÜNTÜLE →
+        </Text>
+      )}
     </MotionBox>
   )
 }
 
 // ── Kullanıcı tablosu satırı ──────────────────────────────────────
-function UserRow({ user, idx }: { user: User; idx: number }) {
-  const [status, setStatus] = useState<Status>(user.status)
-  const rConf = roleConfig[user.role]
-  const sConf = statusConfig[status]
+function UserRow({ user, idx, onAction }: {
+  user: AdminUserResponse
+  idx: number
+  onAction: (id: string, action: 'approve' | 'deactivate' | 'activate') => Promise<void>
+}) {
+  const [busy, setBusy] = useState(false)
+  const rConf = roleConfig[user.role] ?? { label: user.role, color: '#9ca3af', bg: 'rgba(156,163,175,0.12)' }
+  const sConf = getUserStatusDisplay(user)
+  const org   = getUserOrg(user)
+  const city  = getUserCity(user)
+
+  const act = async (action: 'approve' | 'deactivate' | 'activate') => {
+    setBusy(true)
+    try { await onAction(user.id, action) } finally { setBusy(false) }
+  }
+
+  const isPending  = !user.is_active && user.role === 'NGO_MANAGER'
+  const isActive   = user.is_active
+  const isAdmin    = user.role === 'ADMIN'
 
   return (
     <MotionBox
@@ -175,9 +179,8 @@ function UserRow({ user, idx }: { user: User; idx: number }) {
       transition={{ duration: 0.18, delay: idx * 0.04 } as any}
       px={4} py={3}
       display="grid"
-      gridTemplateColumns="2fr 2fr 1.2fr 1.2fr 1.1fr 1fr"
-      gap={3}
-      alignItems="center"
+      gridTemplateColumns="2fr 2fr 1.4fr 1.1fr 1.1fr 1fr"
+      gap={3} alignItems="center"
       bg={idx % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'transparent'}
       borderBottom="1px solid rgba(255,255,255,0.04)"
       _hover={{ bg: 'rgba(129,140,248,0.06)' }}
@@ -199,41 +202,40 @@ function UserRow({ user, idx }: { user: User; idx: number }) {
 
       {/* Kurum / İl */}
       <Box overflow="hidden">
-        <Text fontSize="sm" color="rgba(255,255,255,0.75)" isTruncated>{user.organization ?? '—'}</Text>
-        <Text fontSize="10px" color="rgba(255,255,255,0.3)">{user.il ?? '—'}</Text>
+        <Text fontSize="sm" color="rgba(255,255,255,0.75)" isTruncated>{org}</Text>
+        <Text fontSize="10px" color="rgba(255,255,255,0.3)">{city}</Text>
       </Box>
 
       {/* Rol */}
-      <Box>
-        <Flex align="center" gap={1.5} px={2.5} py={1} borderRadius="full"
-          bg={rConf.bg} border={`1px solid ${rConf.color}30`} w="fit-content">
-          <Text fontSize="10px" fontWeight="700" color={rConf.color} letterSpacing="wide">
-            {rConf.label}
-          </Text>
-        </Flex>
-      </Box>
+      <Flex align="center" gap={1.5} px={2.5} py={1} borderRadius="full"
+        bg={rConf.bg} border={`1px solid ${rConf.color}30`} w="fit-content">
+        <Text fontSize="10px" fontWeight="700" color={rConf.color} letterSpacing="wide">
+          {rConf.label}
+        </Text>
+      </Flex>
 
       {/* Kayıt tarihi */}
-      <Text fontSize="xs" color="rgba(255,255,255,0.4)">{user.created_at}</Text>
+      <Text fontSize="xs" color="rgba(255,255,255,0.4)">{fmtDate(user.created_at)}</Text>
 
       {/* Durum */}
       <Flex align="center" gap={1.5}>
         <MotionBox w={1.5} h={1.5} borderRadius="full" bg={sConf.dot}
-          animate={status === 'active' ? { opacity:[1,0.3,1] } : {}}
+          animate={isActive ? { opacity:[1,0.3,1] } : {}}
           transition={{ duration:2, repeat:Infinity } as any} />
         <Text fontSize="xs" fontWeight="600" color={sConf.color}>{sConf.label}</Text>
       </Flex>
 
       {/* Aksiyonlar */}
       <Flex gap={1.5} justify="flex-end">
-        {status !== 'active' && (
+        {/* Onayla — sadece NGO_MANAGER + pasif */}
+        {isPending && (
           <MotionBox
-            onClick={() => setStatus('active')}
-            cursor="pointer"
+            onClick={() => act('approve')}
+            cursor={busy ? 'wait' : 'pointer'}
             w={7} h={7} borderRadius="lg"
             bg="rgba(74,222,128,0.1)" border="1px solid rgba(74,222,128,0.25)"
             display="flex" alignItems="center" justifyContent="center"
-            color="#4ade80"
+            color="#4ade80" opacity={busy ? 0.5 : 1}
             whileHover={{ bg: 'rgba(74,222,128,0.2)' } as any}
             whileTap={{ scale: 0.9 } as any}
             transition={{ duration: 0.15 } as any}
@@ -242,14 +244,32 @@ function UserRow({ user, idx }: { user: User; idx: number }) {
             <CheckIcon />
           </MotionBox>
         )}
-        {status !== 'suspended' && (
+        {/* Aktif Et — pasif ama onay beklemiyorsa */}
+        {!isActive && !isPending && (
           <MotionBox
-            onClick={() => setStatus('suspended')}
-            cursor="pointer"
+            onClick={() => act('activate')}
+            cursor={busy ? 'wait' : 'pointer'}
+            w={7} h={7} borderRadius="lg"
+            bg="rgba(74,222,128,0.1)" border="1px solid rgba(74,222,128,0.25)"
+            display="flex" alignItems="center" justifyContent="center"
+            color="#4ade80" opacity={busy ? 0.5 : 1}
+            whileHover={{ bg: 'rgba(74,222,128,0.2)' } as any}
+            whileTap={{ scale: 0.9 } as any}
+            transition={{ duration: 0.15 } as any}
+            title="Aktif Et"
+          >
+            <CheckIcon />
+          </MotionBox>
+        )}
+        {/* Askıya Al — aktif + admin değil */}
+        {isActive && !isAdmin && (
+          <MotionBox
+            onClick={() => act('deactivate')}
+            cursor={busy ? 'wait' : 'pointer'}
             w={7} h={7} borderRadius="lg"
             bg="rgba(248,113,113,0.1)" border="1px solid rgba(248,113,113,0.25)"
             display="flex" alignItems="center" justifyContent="center"
-            color="#f87171"
+            color="#f87171" opacity={busy ? 0.5 : 1}
             whileHover={{ bg: 'rgba(248,113,113,0.2)' } as any}
             whileTap={{ scale: 0.9 } as any}
             transition={{ duration: 0.15 } as any}
@@ -375,8 +395,18 @@ function OrgManagementTab() {
       setForm({ name: '', city: '', district: '', org_type: 'STK' })
       toast({ title: 'Kurum eklendi ✓', status: 'success', duration: 3000 })
     } catch (err: any) {
-      const msg = err?.response?.data?.detail ?? 'Kurum eklenemedi'
-      toast({ title: msg, status: 'error', duration: 4000 })
+      const detail = err?.response?.data?.detail
+      const status = err?.response?.status
+      const msg = Array.isArray(detail)
+        ? detail.map((d: any) => d?.msg ?? d).join(', ')
+        : (detail ?? err?.message ?? 'Kurum eklenemedi')
+      toast({
+        title: `Kurum eklenemedi${status ? ` (${status})` : ''}`,
+        description: msg,
+        status: 'error',
+        duration: 6000,
+        isClosable: true,
+      })
     } finally {
       setSaving(false)
     }
@@ -563,27 +593,65 @@ function OrgManagementTab() {
 type Tab = 'users' | 'system' | 'logs' | 'orgs'
 
 export default function SuperAdminPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('users')
-  const [query, setQuery]         = useState('')
-  const [roleFilter, setRoleFilter] = useState<string>('all')
+  const toast = useToast()
+  const [activeTab, setActiveTab]     = useState<Tab>('users')
+  const [users, setUsers]             = useState<AdminUserResponse[]>([])
+  const [loadingUsers, setLoadingUsers] = useState(false)
+  const [query, setQuery]             = useState('')
+  const [roleFilter, setRoleFilter]   = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
 
-  const stats = useMemo(() => ({
-    total:     MOCK_USERS.length,
-    active:    MOCK_USERS.filter(u => u.status === 'active').length,
-    pending:   MOCK_USERS.filter(u => u.status === 'pending').length,
-    suspended: MOCK_USERS.filter(u => u.status === 'suspended').length,
-  }), [])
+  const loadUsers = useCallback(async () => {
+    setLoadingUsers(true)
+    try {
+      const data = await apiAdminGetUsers()
+      setUsers(data)
+    } catch {
+      toast({ title: 'Kullanıcılar yüklenemedi', status: 'error', duration: 3000 })
+    } finally {
+      setLoadingUsers(false)
+    }
+  }, [toast])
 
-  const filtered = useMemo(() => MOCK_USERS.filter(u => {
+  useEffect(() => {
+    if (activeTab === 'users') loadUsers()
+  }, [activeTab, loadUsers])
+
+  const handleAction = useCallback(async (
+    id: string, action: 'approve' | 'deactivate' | 'activate'
+  ) => {
+    try {
+      if (action === 'approve')    await apiAdminApprove(id)
+      if (action === 'deactivate') await apiAdminDeactivate(id)
+      if (action === 'activate')   await apiAdminActivate(id)
+      toast({ title: action === 'deactivate' ? 'Kullanıcı askıya alındı' : 'Kullanıcı onaylandı / aktifleştirildi', status: 'success', duration: 2500 })
+      await loadUsers()
+    } catch {
+      toast({ title: 'İşlem başarısız', status: 'error', duration: 3000 })
+    }
+  }, [toast, loadUsers])
+
+  const stats = useMemo(() => ({
+    total:     users.length,
+    active:    users.filter(u => u.is_active).length,
+    pending:   users.filter(u => !u.is_active && u.role === 'NGO_MANAGER').length,
+    suspended: users.filter(u => !u.is_active && u.role !== 'NGO_MANAGER').length,
+  }), [users])
+
+  const filtered = useMemo(() => users.filter(u => {
     const q = query.toLowerCase()
-    const matchQ = !q || u.full_name.toLowerCase().includes(q) ||
-      u.email.toLowerCase().includes(q) || (u.organization ?? '').toLowerCase().includes(q) ||
-      (u.il ?? '').toLowerCase().includes(q)
+    const matchQ = !q
+      || u.full_name.toLowerCase().includes(q)
+      || u.email.toLowerCase().includes(q)
+      || getUserOrg(u).toLowerCase().includes(q)
+      || getUserCity(u).toLowerCase().includes(q)
     const matchR = roleFilter === 'all' || u.role === roleFilter
-    const matchS = statusFilter === 'all' || u.status === statusFilter
+    const matchS = statusFilter === 'all'
+      || (statusFilter === 'active'    && u.is_active)
+      || (statusFilter === 'pending'   && !u.is_active && u.role === 'NGO_MANAGER')
+      || (statusFilter === 'suspended' && !u.is_active && u.role !== 'NGO_MANAGER')
     return matchQ && matchR && matchS
-  }), [query, roleFilter, statusFilter])
+  }), [users, query, roleFilter, statusFilter])
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'users',  label: 'Kullanıcılar', icon: <UsersIcon /> },
@@ -623,10 +691,14 @@ export default function SuperAdminPage() {
 
       {/* KPI kartları */}
       <Grid templateColumns="repeat(4,1fr)" gap={4} mb={6}>
-        <StatCard label="Toplam Kullanıcı"  value={stats.total}     sub={`${stats.active} aktif`}          color="#818cf8" glow="rgba(129,140,248,0.12)" icon="👥" />
-        <StatCard label="Aktif"             value={stats.active}    sub="Sisteme giriş yapabilir"           color="#4ade80" glow="rgba(74,222,128,0.12)"  icon="✅" />
-        <StatCard label="Onay Bekleyen"     value={stats.pending}   sub="Manuel onay gerekiyor"             color="#fbbf24" glow="rgba(251,191,36,0.12)"  icon="⏳" />
-        <StatCard label="Askıya Alınmış"   value={stats.suspended} sub="Erişim engellenmiş"               color="#f87171" glow="rgba(248,113,113,0.12)" icon="🚫" />
+        <StatCard label="Toplam Kullanıcı" value={stats.total}     sub={`${stats.active} aktif`}  color="#818cf8" glow="rgba(129,140,248,0.12)" icon="👥"
+          onClick={() => { setActiveTab('users'); setStatusFilter('all') }} />
+        <StatCard label="Aktif"            value={stats.active}    sub="Sisteme giriş yapabilir"  color="#4ade80" glow="rgba(74,222,128,0.12)"  icon="✅"
+          onClick={() => { setActiveTab('users'); setStatusFilter('active') }} />
+        <StatCard label="Onay Bekleyen"    value={stats.pending}   sub="Manuel onay gerekiyor"    color="#fbbf24" glow="rgba(251,191,36,0.12)"  icon="⏳"
+          onClick={() => { setActiveTab('users'); setStatusFilter('pending') }} />
+        <StatCard label="Askıya Alınmış"  value={stats.suspended} sub="Erişim engellenmiş"       color="#f87171" glow="rgba(248,113,113,0.12)" icon="🚫"
+          onClick={() => { setActiveTab('users'); setStatusFilter('suspended') }} />
       </Grid>
 
       {/* Tab navigasyon */}
@@ -684,7 +756,7 @@ export default function SuperAdminPage() {
                   borderRadius="xl" />
               </InputGroup>
 
-              <Select h={8} w="160px" fontSize="sm"
+              <Select h={8} w="180px" fontSize="sm"
                 value={roleFilter} onChange={e => setRoleFilter(e.target.value)}
                 bg="rgba(255,255,255,0.04)" border="1px solid rgba(255,255,255,0.08)"
                 color="rgba(255,255,255,0.7)" borderRadius="xl"
@@ -692,10 +764,12 @@ export default function SuperAdminPage() {
                 _focus={{ borderColor:'#818cf8', boxShadow:'0 0 0 3px rgba(129,140,248,0.12)' }}
                 sx={{ option:{ background:'#0d0e20', color:'white' } }}>
                 <option value="all">Tüm Roller</option>
-                <option value="VOLUNTEER">STK Yetkili</option>
-                <option value="NGO">Resmi Yetkili</option>
-                <option value="afad">AFAD</option>
-                <option value="umke">UMKE</option>
+                <option value="NGO_MANAGER">STK Yönetici</option>
+                <option value="NGO_STAFF">STK Personel</option>
+                <option value="OFFICIAL_MANAGER">Resmi Yönetici</option>
+                <option value="OFFICIAL_STAFF">Resmi Personel</option>
+                <option value="VOLUNTEER">Gönüllü</option>
+                <option value="CITIZEN">Vatandaş</option>
               </Select>
 
               <Select h={8} w="160px" fontSize="sm"
@@ -707,12 +781,12 @@ export default function SuperAdminPage() {
                 sx={{ option:{ background:'#0d0e20', color:'white' } }}>
                 <option value="all">Tüm Durumlar</option>
                 <option value="active">Aktif</option>
-                <option value="pending">Beklemede</option>
+                <option value="pending">Onay Bekliyor</option>
                 <option value="suspended">Askıda</option>
               </Select>
 
               <Text fontSize="xs" color="rgba(255,255,255,0.3)" ml="auto">
-                {filtered.length} / {MOCK_USERS.length} kullanıcı
+                {filtered.length} / {users.length} kullanıcı
               </Text>
             </Flex>
 
@@ -722,7 +796,7 @@ export default function SuperAdminPage() {
 
               {/* Başlık */}
               <Box px={4} py={3}
-                display="grid" gridTemplateColumns="2fr 2fr 1.2fr 1.2fr 1.1fr 1fr"
+                display="grid" gridTemplateColumns="2fr 2fr 1.4fr 1.1fr 1.1fr 1fr"
                 gap={3} bg="rgba(255,255,255,0.03)" borderBottom="1px solid rgba(255,255,255,0.06)">
                 {['Ad Soyad / E-posta','Kurum / İl','Rol','Kayıt Tarihi','Durum',''].map((h,i) => (
                   <Text key={i} fontSize="9px" fontWeight="700" color="rgba(255,255,255,0.3)"
@@ -731,12 +805,21 @@ export default function SuperAdminPage() {
               </Box>
 
               {/* Satırlar */}
-              {filtered.length === 0 ? (
+              {loadingUsers ? (
+                <Flex align="center" justify="center" py={12} gap={3}>
+                  <Spinner size="sm" color="#818cf8" />
+                  <Text fontSize="sm" color="rgba(255,255,255,0.35)">Yükleniyor...</Text>
+                </Flex>
+              ) : filtered.length === 0 ? (
                 <Flex align="center" justify="center" py={12}>
-                  <Text fontSize="sm" color="rgba(255,255,255,0.25)">Kullanıcı bulunamadı</Text>
+                  <Text fontSize="sm" color="rgba(255,255,255,0.25)">
+                    {users.length === 0 ? 'Henüz kullanıcı yok' : 'Kullanıcı bulunamadı'}
+                  </Text>
                 </Flex>
               ) : (
-                filtered.map((u, i) => <UserRow key={u.id} user={u} idx={i} />)
+                filtered.map((u, i) => (
+                  <UserRow key={u.id} user={u} idx={i} onAction={handleAction} />
+                ))
               )}
             </Box>
           </MotionBox>

@@ -16,6 +16,8 @@ const pageTitles: Record<string, { title: string; sub: string }> = {
   '/ai':        { title: 'AI Tahminler', sub: 'Yapay zeka öngörüleri' },
   '/resources': { title: 'Kaynaklar',    sub: 'Kaynak yönetimi' },
   '/profile':   { title: 'Profilim',     sub: 'Hesap bilgilerim' },
+  '/teams':     { title: 'Ekip Yönetimi', sub: 'Saha ekiplerini yönet' },
+  '/admin':     { title: 'Süper Admin',  sub: 'Sistem yönetimi' },
 }
 
 function TopBar({ pathname }: { pathname: string }) {
