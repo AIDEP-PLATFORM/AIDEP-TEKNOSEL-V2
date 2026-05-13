@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react'
-import { Box, Flex, Grid, Text, Input, InputGroup, InputLeftElement, Stack, Select } from '@chakra-ui/react'
+import { useEffect, useState, useMemo } from 'react'
+import { Box, Flex, Grid, Text, Input, InputGroup, InputLeftElement, Stack, Spinner } from '@chakra-ui/react'
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
-import { OFFICIALS, orgConfig, type OrgKey } from '@/data/officialsData'
+import { apiListOrganizations, type OrganizationRecord } from '@/services/organizationAdminService'
 
 const MotionBox = motion(Box)
 
@@ -17,88 +17,48 @@ const ChevronIcon = () => (
     <polyline points="9 18 15 12 9 6"/>
   </svg>
 )
-const EditIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
-    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
-  </svg>
-)
-const BanIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
-  </svg>
-)
-const CheckIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="20 6 9 17 4 12"/>
+const MapPinIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/>
   </svg>
 )
 
-// ── Avatar ───────────────────────────────────────────────────────
-function OrgAvatar({ name, color }: { name: string; color: string }) {
-  return (
-    <Flex w={9} h={9} borderRadius="lg" flexShrink={0}
-      align="center" justify="center"
-      bg={`${color}18`} border={`1px solid ${color}35`}>
-      <Text fontSize="11px" fontWeight="800" color={color}>
-        {name.slice(0, 2).toUpperCase()}
-      </Text>
-    </Flex>
-  )
-}
-
-// ── Aksiyon butonu ───────────────────────────────────────────────
-function ActionBtn({ icon, color, title, onClick }: {
-  icon: React.ReactNode; color: string; title?: string
-  onClick?: (e: React.MouseEvent) => void
-}) {
-  return (
-    <MotionBox onClick={onClick} cursor="pointer" title={title}
-      w={7} h={7} borderRadius="lg"
-      bg={`${color}12`} border={`1px solid ${color}28`}
-      display="flex" alignItems="center" justifyContent="center" color={color}
-      whileHover={{ opacity: 0.8 } as any}
-      whileTap={{ scale: 0.88 } as any}
-      transition={{ duration: 0.12 } as any}>
-      {icon}
-    </MotionBox>
-  )
-}
+const ACCENT = '#60a5fa'
 
 // ── Sayfa ────────────────────────────────────────────────────────
 export default function OfficialsPage() {
   const navigate = useNavigate()
-  const [query, setQuery]           = useState('')
-  const [orgFilter, setOrgFilter]   = useState<string>('')
-  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [orgs, setOrgs]       = useState<OrganizationRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [query, setQuery]     = useState('')
+
+  useEffect(() => {
+    apiListOrganizations('OFFICIAL')
+      .then(setOrgs)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
 
   const filtered = useMemo(() => {
-    return OFFICIALS.filter(o => {
-      if (orgFilter && o.org !== orgFilter) return false
-      if (statusFilter && o.status !== statusFilter) return false
-      if (query) {
-        const q = query.toLowerCase()
-        return o.org.toLowerCase().includes(q) || o.description.toLowerCase().includes(q)
-      }
-      return true
-    })
-  }, [query, orgFilter, statusFilter])
+    if (!query) return orgs
+    const q = query.toLowerCase()
+    return orgs.filter(o =>
+      o.name.toLowerCase().includes(q) ||
+      o.city.toLowerCase().includes(q) ||
+      o.district.toLowerCase().includes(q)
+    )
+  }, [orgs, query])
 
-  // KPI kartları
-  const totalPersonnel = OFFICIALS.reduce((a, o) => a + o.members.length, 0)
-  const onDuty = OFFICIALS.reduce((a, o) => a + o.members.filter(m => m.status === 'Görevde').length, 0)
-  const available = OFFICIALS.reduce((a, o) => a + o.members.filter(m => m.status === 'Müsait').length, 0)
+  const uniqueCities = useMemo(() => new Set(orgs.map(o => o.city)).size, [orgs])
 
-  const selectStyle = {
-    bg: 'rgba(255,255,255,0.04)',
-    border: '1px solid rgba(255,255,255,0.08)',
-    borderRadius: 'xl',
-    color: 'white',
-    fontSize: 'sm',
-    h: 8,
-    _hover: { borderColor: 'rgba(96,165,250,0.4)' },
-    _focus: { borderColor: '#60a5fa', boxShadow: '0 0 0 3px rgba(96,165,250,0.12)' },
-  } as const
+  if (loading) {
+    return (
+      <Flex h="60vh" align="center" justify="center" gap={3}>
+        <Spinner color={ACCENT} size="md" />
+        <Text color="rgba(255,255,255,0.4)" fontSize="sm">Yükleniyor...</Text>
+      </Flex>
+    )
+  }
 
   return (
     <Box p={{ base: 5, md: 6 }}>
@@ -106,9 +66,9 @@ export default function OfficialsPage() {
       {/* KPI satırı */}
       <Grid templateColumns="repeat(3,1fr)" gap={4} mb={6}>
         {[
-          { label:'Toplam Personel', value: totalPersonnel, color:'#60a5fa' },
-          { label:'Görevde',         value: onDuty,         color:'#818cf8' },
-          { label:'Müsait',          value: available,      color:'#4ade80' },
+          { label: 'Toplam Şube',  value: orgs.length,  color: ACCENT    },
+          { label: 'İl Sayısı',   value: uniqueCities, color: '#818cf8' },
+          { label: 'Kurum Türü',  value: 'Resmi',      color: '#4ade80' },
         ].map((k, i) => (
           <MotionBox key={k.label}
             initial={{ opacity:0, y:12 }} animate={{ opacity:1, y:0 }}
@@ -122,33 +82,24 @@ export default function OfficialsPage() {
         ))}
       </Grid>
 
-      {/* Filtreler */}
+      {/* Arama */}
       <MotionBox initial={{ opacity:0 }} animate={{ opacity:1 }}
         transition={{ delay:0.15 } as any} mb={4}>
         <Flex gap={3} align="center">
-          <InputGroup flex={1}>
+          <InputGroup flex={1} maxW="400px">
             <InputLeftElement pointerEvents="none" h={8} color="rgba(255,255,255,0.3)">
               <SearchIcon />
             </InputLeftElement>
             <Input value={query} onChange={e => setQuery(e.target.value)}
-              placeholder="Kurum veya açıklama ara..."
-              {...selectStyle} pl={10} />
+              placeholder="Kurum adı, il veya ilçe ara..."
+              bg="rgba(255,255,255,0.04)" border="1px solid rgba(255,255,255,0.08)"
+              borderRadius="xl" color="white" _placeholder={{ color:'rgba(255,255,255,0.25)' }}
+              _focus={{ borderColor:`${ACCENT}60`, boxShadow:`0 0 0 3px ${ACCENT}20`, bg:'rgba(255,255,255,0.06)' }}
+              h={8} fontSize="sm" pl={10} />
           </InputGroup>
-
-          <Select value={orgFilter} onChange={e => setOrgFilter(e.target.value)}
-            {...selectStyle} maxW="160px" sx={{ option: { bg:'#1a1b2e' } }}>
-            <option value="">Tüm Kurumlar</option>
-            <option value="AFAD">AFAD</option>
-            <option value="UMKE">UMKE</option>
-            <option value="Kızılay">Kızılay</option>
-          </Select>
-
-          <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-            {...selectStyle} maxW="140px" sx={{ option: { bg:'#1a1b2e' } }}>
-            <option value="">Tüm Durum</option>
-            <option value="Aktif">Aktif</option>
-            <option value="Pasif">Pasif</option>
-          </Select>
+          <Text fontSize="xs" color="rgba(255,255,255,0.3)" ml="auto">
+            {filtered.length} kurum
+          </Text>
         </Flex>
       </MotionBox>
 
@@ -159,85 +110,66 @@ export default function OfficialsPage() {
         borderRadius="2xl" overflow="hidden" backdropFilter="blur(12px)">
 
         {/* Başlık */}
-        <Grid templateColumns="2.2fr 2fr 0.8fr 1fr 0.8fr 80px"
+        <Grid templateColumns="2fr 1.5fr 1.5fr 1fr"
           px={6} py={3}
           borderBottom="1px solid rgba(255,255,255,0.06)"
           bg="rgba(255,255,255,0.02)">
-          {['Kurum', 'Açıklama', 'Personel', 'Bölge', 'Durum', ''].map(h => (
+          {['Kurum Adı', 'İl', 'İlçe / Şube', ''].map(h => (
             <Text key={h} fontSize="10px" color="rgba(255,255,255,0.3)"
               fontWeight="700" letterSpacing="widest" textTransform="uppercase">{h}</Text>
           ))}
         </Grid>
 
         <Stack spacing={0}>
-          {filtered.map((o, i) => {
-            const cfg = orgConfig[o.org as OrgKey]
-            const regionCount = new Set(o.members.map(m => `${m.il}___${m.ilce}`)).size
-            const isActive = o.status === 'Aktif'
-
+          {filtered.length === 0 ? (
+            <Box px={6} py={14} textAlign="center">
+              <Text fontSize="sm" color="rgba(255,255,255,0.3)">
+                {orgs.length === 0 ? 'Henüz resmi kurum kaydı yok' : 'Eşleşen kayıt bulunamadı'}
+              </Text>
+            </Box>
+          ) : filtered.map((o, i) => {
+            const initials = o.name.split(' ').slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('')
             return (
               <MotionBox key={o.id}
                 initial={{ opacity:0, x:-12 }} animate={{ opacity:1, x:0 }}
-                transition={{ delay: 0.26 + i*0.06, duration:0.28 } as any}
+                transition={{ delay: 0.26 + i*0.05, duration:0.25 } as any}
                 onClick={() => navigate(`/officials/${o.id}`)}
                 cursor="pointer"
                 borderBottom={i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none'}
                 _hover={{ bg:'rgba(255,255,255,0.04)' }}
                 style={{ transition:'background 0.15s' }}>
 
-                <Grid templateColumns="2.2fr 2fr 0.8fr 1fr 0.8fr 80px"
+                <Grid templateColumns="2fr 1.5fr 1.5fr 1fr"
                   px={6} py={4} alignItems="center">
 
                   {/* Kurum adı */}
                   <Flex align="center" gap={3}>
-                    <OrgAvatar name={o.org} color={cfg.color} />
+                    <Flex w={9} h={9} borderRadius="lg" flexShrink={0}
+                      align="center" justify="center"
+                      bg={`${ACCENT}18`} border={`1px solid ${ACCENT}35`}>
+                      <Text fontSize="11px" fontWeight="800" color={ACCENT}>{initials}</Text>
+                    </Flex>
                     <Box>
-                      <Text fontSize="sm" color="white" fontWeight="700">{o.org}</Text>
+                      <Text fontSize="sm" color="white" fontWeight="700">{o.name}</Text>
+                      <Box px={2} py={0.5} borderRadius="full" w="fit-content" mt={0.5}
+                        bg={`${ACCENT}12`} border={`1px solid ${ACCENT}30`}>
+                        <Text fontSize="9px" fontWeight="700" color={ACCENT}>RESMİ</Text>
+                      </Box>
                     </Box>
                   </Flex>
 
-                  {/* Açıklama */}
-                  <Flex align="center" gap={2}>
-                    <Box w={1.5} h={1.5} borderRadius="full" bg={cfg.color} flexShrink={0} />
-                    <Text fontSize="sm" color="rgba(255,255,255,0.5)" isTruncated>{o.description}</Text>
-                  </Flex>
-
-                  {/* Personel */}
+                  {/* İl */}
                   <Flex align="center" gap={1.5}>
-                    <Text fontSize="sm" color={cfg.color} fontWeight="700">{o.members.length}</Text>
-                    <Text fontSize="xs" color="rgba(255,255,255,0.3)">kişi</Text>
+                    <Box color={ACCENT} opacity={0.7} display="flex"><MapPinIcon /></Box>
+                    <Text fontSize="sm" color="rgba(255,255,255,0.65)">{o.city}</Text>
                   </Flex>
 
-                  {/* Bölge sayısı */}
-                  <Flex align="center" gap={1.5}>
-                    <Text fontSize="sm" color="rgba(255,255,255,0.6)" fontWeight="600">{regionCount}</Text>
-                    <Text fontSize="xs" color="rgba(255,255,255,0.3)">ilçe</Text>
-                  </Flex>
+                  {/* İlçe */}
+                  <Text fontSize="sm" color="rgba(255,255,255,0.45)">{o.district}</Text>
 
-                  {/* Durum */}
-                  <Box>
-                    <Flex display="inline-flex" align="center" gap={1.5}
-                      px={2.5} py={1} borderRadius="full"
-                      bg={isActive ? 'rgba(74,222,128,0.1)' : 'rgba(156,163,175,0.1)'}
-                      border={`1px solid ${isActive ? 'rgba(74,222,128,0.25)' : 'rgba(156,163,175,0.2)'}`}>
-                      <MotionBox w={1.5} h={1.5} borderRadius="full"
-                        bg={isActive ? '#4ade80' : '#9ca3af'}
-                        animate={isActive ? { opacity:[1,0.3,1] } : {}}
-                        transition={{ duration:2, repeat:Infinity } as any}/>
-                      <Text fontSize="10px" fontWeight="700"
-                        color={isActive ? '#4ade80' : '#9ca3af'}>{o.status}</Text>
-                    </Flex>
-                  </Box>
-
-                  {/* Aksiyonlar */}
-                  <Flex gap={1.5} justify="flex-end" onClick={e => e.stopPropagation()}>
-                    <ActionBtn icon={<EditIcon />} color="#60a5fa" title="Düzenle" />
-                    <ActionBtn
-                      icon={isActive ? <BanIcon /> : <CheckIcon />}
-                      color={isActive ? '#f87171' : '#4ade80'}
-                      title={isActive ? 'Askıya Al' : 'Aktifleştir'}
-                    />
-                    <Box color="rgba(255,255,255,0.25)" display="flex" alignItems="center">
+                  {/* Ok */}
+                  <Flex justify="flex-end">
+                    <Box color="rgba(255,255,255,0.25)" display="flex">
                       <ChevronIcon />
                     </Box>
                   </Flex>
@@ -245,12 +177,6 @@ export default function OfficialsPage() {
               </MotionBox>
             )
           })}
-
-          {filtered.length === 0 && (
-            <Box px={6} py={14} textAlign="center">
-              <Text fontSize="sm" color="rgba(255,255,255,0.3)">Eşleşen kayıt bulunamadı</Text>
-            </Box>
-          )}
         </Stack>
       </MotionBox>
     </Box>

@@ -48,3 +48,8 @@ export async function apiRejectVolunteer(userId: string): Promise<VolunteerActio
   const { data } = await API.put<VolunteerActionResponse>(`/volunteers/${userId}/reject`, {}, { headers: auth() })
   return data
 }
+
+export async function apiGetOrgMembersByOrgId(orgId: string): Promise<OrgMember[]> {
+  const { data } = await API.get<OrgMember[]>(`/volunteers/org/${orgId}/members`, { headers: auth() })
+  return data
+}

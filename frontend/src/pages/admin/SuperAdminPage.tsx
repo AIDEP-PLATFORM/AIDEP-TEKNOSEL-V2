@@ -12,8 +12,9 @@ import {
 import {
   apiAdminGetUsers, apiAdminGetPending,
   apiAdminApprove, apiAdminDeactivate, apiAdminActivate,
+  apiGetActivityLog,
   getUserOrg, getUserCity,
-  type AdminUserResponse,
+  type AdminUserResponse, type ActivityLogEntry,
 } from '@/services/adminService'
 
 const MotionBox  = motion(Box)
@@ -42,19 +43,6 @@ function fmtDate(iso: string) {
   try { return new Date(iso).toLocaleDateString('tr-TR') } catch { return iso }
 }
 
-// ── Sistem logları ───────────────────────────────────────────────
-const LOGS = [
-  { id:1, time:'10:42:15', type:'user',    msg:'Yeni kayıt: Fatma Şahin (STK Yetkili - Hayata Destek)',    color:'#818cf8' },
-  { id:2, time:'10:38:02', type:'system',  msg:'Sismik veri servisi güncellendi (AFAD API v2.3)',           color:'#34d399' },
-  { id:3, time:'10:21:47', type:'warning', msg:'Zeynep Arslan hesabı askıya alındı (yetkisiz erişim)',      color:'#fbbf24' },
-  { id:4, time:'09:55:30', type:'user',    msg:'Yeni kayıt: Tarık Bozkurt (STK Yetkili - Hayata Destek)', color:'#818cf8' },
-  { id:5, time:'09:44:18', type:'system',  msg:'Otomatik yedekleme tamamlandı (DB snapshot)',               color:'#34d399' },
-  { id:6, time:'09:32:05', type:'request', msg:'Kritik talep #1042: Enkaz altında yaralı — Bornova/İzmir', color:'#f87171' },
-  { id:7, time:'09:18:50', type:'user',    msg:'Seda Yılmaz kaydı onay bekliyor (UMKE)',                   color:'#818cf8' },
-  { id:8, time:'08:51:22', type:'system',  msg:'Platform başlatıldı — tüm servisler aktif',                color:'#34d399' },
-  { id:9, time:'08:44:10', type:'request', msg:'Yüksek öncelikli talep #1041: Bina çökmesi — Kadıköy',     color:'#fb923c' },
-  { id:10,time:'08:30:00', type:'system',  msg:'Günlük rapor oluşturuldu ve arşivlendi',                   color:'#34d399' },
-]
 
 
 // ── Yardımcı bileşenler ──────────────────────────────────────────
@@ -600,6 +588,8 @@ export default function SuperAdminPage() {
   const [query, setQuery]             = useState('')
   const [roleFilter, setRoleFilter]   = useState<string>('all')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [logs, setLogs]               = useState<ActivityLogEntry[]>([])
+  const [loadingLogs, setLoadingLogs] = useState(false)
 
   const loadUsers = useCallback(async () => {
     setLoadingUsers(true)
@@ -615,6 +605,13 @@ export default function SuperAdminPage() {
 
   useEffect(() => {
     if (activeTab === 'users') loadUsers()
+    if (activeTab === 'logs') {
+      setLoadingLogs(true)
+      apiGetActivityLog(30)
+        .then(setLogs)
+        .catch(() => {})
+        .finally(() => setLoadingLogs(false))
+    }
   }, [activeTab, loadUsers])
 
   const handleAction = useCallback(async (
@@ -912,41 +909,52 @@ export default function SuperAdminPage() {
               </Flex>
 
               {/* Log satırları */}
-              <Stack spacing={0}>
-                {LOGS.map((log, i) => (
-                  <MotionBox key={log.id}
-                    initial={{ opacity:0, x:-10 }} animate={{ opacity:1, x:0 }}
-                    transition={{ duration:0.18, delay: i * 0.05 } as any}
-                    px={5} py={3.5}
-                    display="flex" alignItems="flex-start" gap={4}
-                    bg={i % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'transparent'}
-                    borderBottom="1px solid rgba(255,255,255,0.04)"
-                    _hover={{ bg:'rgba(129,140,248,0.05)' }}
-                    style={{ transition: 'background 0.15s' }}
-                  >
-                    {/* Sol çizgi */}
-                    <Box w="2px" h="36px" borderRadius="full" bg={log.color} opacity={0.6} flexShrink={0} mt={0.5} />
+              {loadingLogs ? (
+                <Flex align="center" justify="center" py={12} gap={3}>
+                  <Spinner size="sm" color="#818cf8" />
+                  <Text fontSize="sm" color="rgba(255,255,255,0.35)">Yükleniyor...</Text>
+                </Flex>
+              ) : logs.length === 0 ? (
+                <Flex align="center" justify="center" py={12}>
+                  <Text fontSize="sm" color="rgba(255,255,255,0.25)">Henüz aktivite kaydı yok</Text>
+                </Flex>
+              ) : (
+                <Stack spacing={0}>
+                  {logs.map((log, i) => (
+                    <MotionBox key={i}
+                      initial={{ opacity:0, x:-10 }} animate={{ opacity:1, x:0 }}
+                      transition={{ duration:0.18, delay: i * 0.04 } as any}
+                      px={5} py={3.5}
+                      display="flex" alignItems="flex-start" gap={4}
+                      bg={i % 2 === 0 ? 'rgba(255,255,255,0.015)' : 'transparent'}
+                      borderBottom="1px solid rgba(255,255,255,0.04)"
+                      _hover={{ bg:'rgba(129,140,248,0.05)' }}
+                      style={{ transition: 'background 0.15s' }}
+                    >
+                      {/* Sol çizgi */}
+                      <Box w="2px" h="36px" borderRadius="full" bg={log.color} opacity={0.6} flexShrink={0} mt={0.5} />
 
-                    {/* Zaman */}
-                    <Text fontSize="11px" color="rgba(255,255,255,0.35)" fontFamily="mono"
-                      flexShrink={0} w="55px" mt={0.5}>{log.time}</Text>
+                      {/* Zaman */}
+                      <Text fontSize="11px" color="rgba(255,255,255,0.35)" fontFamily="mono"
+                        flexShrink={0} w="55px" mt={0.5}>{log.time}</Text>
 
-                    {/* Tür badge */}
-                    <Flex px={2} py={0.5} borderRadius="full"
-                      bg={`${log.color}15`} border={`1px solid ${log.color}30`}
-                      flexShrink={0} align="center">
-                      <Text fontSize="9px" fontWeight="700" color={log.color}
-                        textTransform="uppercase" letterSpacing="wider">
-                        {log.type === 'user' ? 'KULLANICI' : log.type === 'system' ? 'SİSTEM' :
-                          log.type === 'warning' ? 'UYARI' : 'TALEP'}
-                      </Text>
-                    </Flex>
+                      {/* Tür badge */}
+                      <Flex px={2} py={0.5} borderRadius="full"
+                        bg={`${log.color}15`} border={`1px solid ${log.color}30`}
+                        flexShrink={0} align="center">
+                        <Text fontSize="9px" fontWeight="700" color={log.color}
+                          textTransform="uppercase" letterSpacing="wider">
+                          {log.type === 'user' ? 'KULLANICI' : log.type === 'system' ? 'SİSTEM' :
+                            log.type === 'warning' ? 'UYARI' : 'TALEP'}
+                        </Text>
+                      </Flex>
 
-                    {/* Mesaj */}
-                    <Text fontSize="sm" color="rgba(255,255,255,0.65)" lineHeight={1.5}>{log.msg}</Text>
-                  </MotionBox>
-                ))}
-              </Stack>
+                      {/* Mesaj */}
+                      <Text fontSize="sm" color="rgba(255,255,255,0.65)" lineHeight={1.5}>{log.msg}</Text>
+                    </MotionBox>
+                  ))}
+                </Stack>
+              )}
             </Box>
           </MotionBox>
         )}

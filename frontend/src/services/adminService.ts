@@ -111,3 +111,18 @@ export async function apiAdminActivate(userId: string): Promise<ApproveResponse>
   })
   return data
 }
+
+export interface ActivityLogEntry {
+  time: string
+  type: string
+  msg: string
+  color: string
+}
+
+export async function apiGetActivityLog(limit = 20): Promise<ActivityLogEntry[]> {
+  const { data } = await API.get<ActivityLogEntry[]>('/admin/activity-log', {
+    headers: auth(),
+    params: { limit },
+  })
+  return data
+}

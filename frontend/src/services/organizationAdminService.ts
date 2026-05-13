@@ -42,3 +42,10 @@ export async function apiListOrganizations(org_type?: OrgType): Promise<Organiza
   })
   return data
 }
+
+export async function apiGetOrganizationById(id: string): Promise<OrganizationRecord> {
+  const { data } = await API.get<OrganizationRecord>(`/organizations/${id}`, {
+    headers: authHeader(),
+  })
+  return data
+}

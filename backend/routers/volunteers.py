@@ -240,6 +240,63 @@ async def reject_member(
     )
 
 
+# ─── Belirli Org'un Üyeleri (ADMIN + NGO_MANAGER kendi orgu) ────
+
+@router.get("/org/{org_id}/members", response_model=list[OrgMemberResponse])
+async def get_org_members_by_id(
+    org_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Belirli bir organizasyonun tüm üyelerini listeler.
+    ADMIN tüm org'ları görebilir; NGO_MANAGER yalnızca kendi org'unu görebilir.
+    """
+    allowed = {UserRole.NGO_MANAGER, UserRole.ADMIN, UserRole.OFFICIAL_MANAGER}
+    if current_user.role not in allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Erişim yetkisi yok")
+
+    if current_user.role == UserRole.NGO_MANAGER:
+        mgr_result = await db.execute(
+            select(NgoManagerProfile.organization_id)
+            .where(NgoManagerProfile.user_id == current_user.id)
+        )
+        manager_org_id = mgr_result.scalar_one_or_none()
+        if not manager_org_id or str(manager_org_id) != str(org_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu organizasyona erişim yetkiniz yok")
+
+    members: list[OrgMemberResponse] = []
+
+    vol_result = await db.execute(
+        select(User, VolunteerProfile)
+        .join(VolunteerProfile, VolunteerProfile.user_id == User.id)
+        .where(User.role == UserRole.VOLUNTEER, VolunteerProfile.organization_id == org_id)
+        .order_by(User.full_name)
+    )
+    for user, profile in vol_result.all():
+        members.append(OrgMemberResponse(
+            id=user.id, full_name=user.full_name, email=user.email, phone=user.phone,
+            role=user.role, is_active=user.is_active,
+            skills=profile.skills or [], active_task_count=profile.active_task_count or 0,
+            has_location=user.current_location is not None, created_at=user.created_at,
+        ))
+
+    staff_result = await db.execute(
+        select(User, NgoStaffProfile)
+        .join(NgoStaffProfile, NgoStaffProfile.user_id == User.id)
+        .where(User.role == UserRole.NGO_STAFF, NgoStaffProfile.organization_id == org_id)
+        .order_by(User.full_name)
+    )
+    for user, _ in staff_result.all():
+        members.append(OrgMemberResponse(
+            id=user.id, full_name=user.full_name, email=user.email, phone=user.phone,
+            role=user.role, is_active=user.is_active,
+            skills=[], active_task_count=0,
+            has_location=user.current_location is not None, created_at=user.created_at,
+        ))
+
+    return sorted(members, key=lambda m: m.full_name)
+
+
 async def _find_pending_member(db: AsyncSession, user_id: UUID, org_id) -> User:
     """VOLUNTEER veya NGO_STAFF rolündeki üyeyi org kontrolüyle bulur."""
     # Önce gönüllü olarak ara
