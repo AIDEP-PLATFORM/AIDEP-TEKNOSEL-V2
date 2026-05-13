@@ -245,13 +245,18 @@ async def list_damage_photos(
     _: User = Depends(get_current_user),
 ):
     """Bir yardım talebine yüklenmiş hasar fotoğraflarını listeler.
-    Yükleme tarihine göre artan sırada döner.
+    Yükleme tarihine göre artan sırada döner. photo_url presigned URL içerir.
     Erişim: Tüm kayıtlı kullanıcılar.
     """
-    # Talep varlık kontrolü (404 fırlat)
     await request_service.get_request(db, request_id)
     photos = await photo_service.get_request_photos(db, request_id)
-    return [DamagePhotoResponse.model_validate(p) for p in photos]
+    responses = []
+    for p in photos:
+        r = DamagePhotoResponse.model_validate(p)
+        r.analysis_success = p.damage_score is not None
+        r.photo_url = await photo_service.get_presigned_url(p.minio_key)
+        responses.append(r)
+    return responses
 
 
 # ─── Eşleştirme Tetikleme ───────────────────────────────────────
@@ -273,3 +278,58 @@ async def run_matching(
     _require_manager_or_admin(current_user)
     result = await matching_service.run_matching(db, current_user)
     return MatchingRunResponse(**result)
+
+
+# ─── Konumdan Rota Hesaplama ────────────────────────────────────
+
+class RouteResponse(dict):
+    pass
+
+
+@router.get(
+    "/{request_id}/route",
+    summary="Verilen konumdan talep noktasına rota hesapla",
+)
+async def calculate_route(
+    request_id: UUID,
+    origin_lat: float = Query(..., ge=-90,  le=90,  description="Başlangıç enlemi"),
+    origin_lon: float = Query(..., ge=-180, le=180, description="Başlangıç boylamı"),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """
+    Tarayıcı/kullanıcı konumundan belirtilen yardım talebinin konumuna
+    OSRM üzerinden adım adım rota hesaplar.
+
+    Dönüş:
+        distance_km, duration_min, damage_score,
+        geometry  ([[lon, lat], ...]),
+        steps     ([{instruction, street_name, distance_m, duration_s, location, maneuver}])
+    """
+    from services.osrm_service import get_best_route
+
+    req = await request_service.get_request(db, request_id)
+
+    route = await get_best_route(
+        origin_lat=origin_lat,
+        origin_lon=origin_lon,
+        dest_lat=req.latitude,
+        dest_lon=req.longitude,
+        include_steps=True,
+    )
+
+    if not route:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Rota hesaplanamadı. OSRM servisi erişilemez olabilir.",
+        )
+
+    return {
+        "distance_km":   route["distance_km"],
+        "duration_min":  route["duration_min"],
+        "damage_score":  route["damage_score"],
+        "geometry":      route["geometry"],
+        "steps":         route.get("steps", []),
+        "origin":        {"lat": origin_lat, "lon": origin_lon},
+        "destination":   {"lat": req.latitude, "lon": req.longitude},
+    }

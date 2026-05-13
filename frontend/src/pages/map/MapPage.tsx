@@ -1,16 +1,20 @@
 import {
   Box, Button, ButtonGroup, Flex, Heading, Spinner, Stack, Text,
 } from '@chakra-ui/react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import { getRole } from '@/utils/auth'
 import {
-  apiGetEarthquakes, apiGetSafeAreas, apiGetTeams,
-  type Earthquake, type SafeArea, type TeamLocation,
+  apiGetEarthquakes, apiGetSafeAreas, apiGetTeams, apiGetActiveRoutes, apiGetMapRequests,
+  type Earthquake, type SafeArea, type TeamLocation, type ActiveRoute, type ActiveRequestForMap,
 } from '@/services/mapService'
+import { apiCalculateRoute, type RouteCalculationResult } from '@/services/requestService'
 
-type LayerKey = 'earthquakes' | 'safeAreas' | 'teams'
+type LayerKey = 'earthquakes' | 'safeAreas' | 'teams' | 'routes' | 'requests'
 const MANAGER_ROLES = ['ADMIN', 'NGO_MANAGER', 'OFFICIAL_MANAGER']
+const NEED_LABELS_MAP: Record<string, string> = {
+  RESCUE: 'Kurtarma', MEDICAL: 'Medikal', SHELTER: 'Barınak', FOOD: 'Gıda', OTHER: 'Diğer',
+}
 const TILE_DARK  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
 const TILE_LIGHT = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png'
 
@@ -57,16 +61,22 @@ export default function MapPage() {
   const role = getRole()
   const canSeeTeams = MANAGER_ROLES.includes(role ?? '')
 
-  const [earthquakes, setEarthquakes] = useState<Earthquake[]>([])
-  const [safeAreas,   setSafeAreas]   = useState<SafeArea[]>([])
-  const [teams,       setTeams]       = useState<TeamLocation[]>([])
+  const [earthquakes,   setEarthquakes]   = useState<Earthquake[]>([])
+  const [safeAreas,     setSafeAreas]     = useState<SafeArea[]>([])
+  const [teams,         setTeams]         = useState<TeamLocation[]>([])
+  const [activeRoutes,      setActiveRoutes]      = useState<ActiveRoute[]>([])
+  const [activeMapRequests, setActiveMapRequests] = useState<ActiveRequestForMap[]>([])
+  const [selectedMapRequest, setSelectedMapRequest] = useState<ActiveRequestForMap | null>(null)
+  const [mapLiveRoute,      setMapLiveRoute]      = useState<RouteCalculationResult | null>(null)
+  const [mapRouteLoading,   setMapRouteLoading]   = useState(false)
+  const [mapRouteError,     setMapRouteError]     = useState('')
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState('')
   const [lightMode,  setLightMode]  = useState(false)
   const [eqSort,     setEqSort]     = useState<'time' | 'mag'>('time')
   const [selectedEq, setSelectedEq] = useState<Earthquake | null>(null)
   const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
-    earthquakes: true, safeAreas: true, teams: canSeeTeams,
+    earthquakes: true, safeAreas: true, teams: canSeeTeams, routes: canSeeTeams, requests: canSeeTeams,
   })
 
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
@@ -79,7 +89,10 @@ export default function MapPage() {
   const eqRef     = useRef<L.LayerGroup | null>(null)
   const saRef     = useRef<L.LayerGroup | null>(null)
   const tmRef     = useRef<L.LayerGroup | null>(null)
-  const userLocRef = useRef<L.Marker | null>(null)
+  const rtRef          = useRef<L.LayerGroup | null>(null)
+  const reqRef         = useRef<L.LayerGroup | null>(null)
+  const liveRouteMapRef = useRef<L.LayerGroup | null>(null)
+  const userLocRef     = useRef<L.Marker | null>(null)
   const tileSwapReady = useRef(false)
 
   // ── Init map (once, survive StrictMode) ─────────────────────────
@@ -104,10 +117,13 @@ export default function MapPage() {
     }).addTo(map)
 
     tileRef.current  = tile
-    eqRef.current    = L.layerGroup().addTo(map)
-    saRef.current    = L.layerGroup().addTo(map)
-    tmRef.current    = L.layerGroup().addTo(map)
-    mapRef.current   = map
+    eqRef.current         = L.layerGroup().addTo(map)
+    saRef.current         = L.layerGroup().addTo(map)
+    rtRef.current         = L.layerGroup().addTo(map)
+    tmRef.current         = L.layerGroup().addTo(map)
+    reqRef.current        = L.layerGroup().addTo(map)
+    liveRouteMapRef.current = L.layerGroup().addTo(map)
+    mapRef.current        = map
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => map.invalidateSize())
@@ -119,10 +135,13 @@ export default function MapPage() {
       tileSwapReady.current = false
       map.remove()
       mapRef.current = null
-      tileRef.current = null
-      eqRef.current   = null
-      saRef.current   = null
-      tmRef.current   = null
+      tileRef.current        = null
+      eqRef.current          = null
+      saRef.current          = null
+      tmRef.current          = null
+      rtRef.current          = null
+      reqRef.current         = null
+      liveRouteMapRef.current = null
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -146,6 +165,13 @@ export default function MapPage() {
   }, [lightMode])
 
   // ── Load data ────────────────────────────────────────────────────
+  const loadRoutes = useCallback(async () => {
+    if (!canSeeTeams) return
+    try { setTeams(await apiGetTeams()) } catch { /* teams unavailable */ }
+    try { setActiveRoutes(await apiGetActiveRoutes()) } catch { /* routes unavailable */ }
+    try { setActiveMapRequests(await apiGetMapRequests()) } catch { /* requests unavailable */ }
+  }, [canSeeTeams])
+
   useEffect(() => {
     ;(async () => {
       setLoading(true); setError('')
@@ -157,11 +183,16 @@ export default function MapPage() {
       } finally {
         setLoading(false)
       }
-      if (canSeeTeams) {
-        try { setTeams(await apiGetTeams()) } catch { /* teams unavailable */ }
-      }
+      await loadRoutes()
     })()
-  }, [canSeeTeams])
+  }, [canSeeTeams, loadRoutes])
+
+  // ── 30s auto-refresh rotalar için ───────────────────────────────
+  useEffect(() => {
+    if (!canSeeTeams) return
+    const interval = setInterval(loadRoutes, 30_000)
+    return () => clearInterval(interval)
+  }, [canSeeTeams, loadRoutes])
 
   // ── Earthquake markers ───────────────────────────────────────────
   useEffect(() => {
@@ -212,6 +243,120 @@ export default function MapPage() {
     })
   }, [teams, layers.teams, canSeeTeams])
 
+  // ── Active request markers (clickable, pulsing) ──────────────────
+  useEffect(() => {
+    const layer = reqRef.current; if (!layer) return
+    layer.clearLayers()
+    if (!layers.requests || !canSeeTeams) return
+
+    const NEED_LABELS: Record<string, string> = {
+      RESCUE: 'Kurtarma', MEDICAL: 'Medikal', SHELTER: 'Barınak',
+      FOOD: 'Gıda', OTHER: 'Diğer',
+    }
+
+    activeMapRequests.forEach(req => {
+      const uc = req.urgencyLevel >= 4 ? '#f87171' : req.urgencyLevel >= 3 ? '#fb923c' : '#fbbf24'
+      const icon = L.divIcon({
+        className: '',
+        html: `
+          <div style="position:relative;width:24px;height:24px;display:flex;align-items:center;justify-content:center;">
+            <div style="position:absolute;width:24px;height:24px;border-radius:50%;
+              background:${uc}33;border:2px solid ${uc}88;animation:aidep-pulse 1.8s infinite;"></div>
+            <div style="width:12px;height:12px;border-radius:50%;background:${uc};
+              border:2px solid white;box-shadow:0 0 8px ${uc};position:relative;z-index:1;"></div>
+          </div>
+        `,
+        iconSize: [24, 24],
+        iconAnchor: [12, 12],
+      })
+
+      L.marker([req.latitude, req.longitude], { icon })
+        .on('click', () => {
+          setSelectedMapRequest(req)
+          setMapLiveRoute(null)
+          setMapRouteError('')
+          mapRef.current?.panTo([req.latitude, req.longitude])
+        })
+        .bindTooltip(`${NEED_LABELS[req.needType] ?? req.needType} · ${req.personCount} kişi`, {
+          direction: 'top', offset: [0, -14],
+        })
+        .addTo(layer)
+    })
+  }, [activeMapRequests, layers.requests, canSeeTeams])
+
+  // ── Live route polyline on map ────────────────────────────────────
+  useEffect(() => {
+    const layer = liveRouteMapRef.current; if (!layer) return
+    layer.clearLayers()
+    if (!mapLiveRoute) return
+
+    const latlngs: L.LatLngTuple[] = mapLiveRoute.geometry.map(([lon, lat]) => [lat, lon])
+    if (latlngs.length === 0) return
+
+    L.polyline(latlngs, { color: '#fb923c', weight: 5, opacity: 0.92 }).addTo(layer)
+
+    const originIcon = L.divIcon({
+      className: '',
+      html: `<div style="width:12px;height:12px;border-radius:50%;background:#818cf8;border:2px solid white;box-shadow:0 0 8px #818cf8;"></div>`,
+      iconSize: [12, 12], iconAnchor: [6, 6],
+    })
+    L.marker([mapLiveRoute.origin.lat, mapLiveRoute.origin.lon], { icon: originIcon })
+      .bindPopup('<b style="color:#818cf8">Başlangıç Konumunuz</b>')
+      .addTo(layer)
+
+    if (mapRef.current && latlngs.length > 1) {
+      mapRef.current.fitBounds(L.latLngBounds(latlngs), { padding: [60, 60] })
+    }
+  }, [mapLiveRoute])
+
+  // ── Active route polylines ───────────────────────────────────────
+  useEffect(() => {
+    const layer = rtRef.current; if (!layer) return
+    layer.clearLayers()
+    if (!layers.routes || !canSeeTeams) return
+
+    const NEED_LABELS: Record<string, string> = {
+      RESCUE: 'Kurtarma', MEDICAL: 'Medikal', SHELTER: 'Barınak',
+      FOOD: 'Gıda', OTHER: 'Diğer',
+    }
+
+    activeRoutes.forEach(route => {
+      const isEnRoute = route.assignmentStatus === 'EN_ROUTE'
+      const color     = isEnRoute ? '#fb923c' : '#fbbf24'
+      const dashArray = isEnRoute ? undefined : '8, 6'
+
+      // [[lon,lat]] → [[lat,lon]] için Leaflet
+      const latlngs: L.LatLngTuple[] = route.geometry.map(([lon, lat]) => [lat, lon])
+      if (latlngs.length === 0) return
+
+      L.polyline(latlngs, {
+        color, weight: isEnRoute ? 4 : 3,
+        opacity: 0.85, dashArray,
+      }).bindPopup(`
+        <b style="color:${color}">${isEnRoute ? '🚐 Yolda' : '📋 Atandı'} — ${NEED_LABELS[route.needType] ?? route.needType}</b><br/>
+        <span style="color:#aaa">Mesafe: ${route.distanceKm.toFixed(1)} km · ~${Math.round(route.durationMin)} dk</span>
+      `).addTo(layer)
+
+      // Başlangıç noktası (ekip konumu)
+      const startIcon = L.divIcon({
+        className: '',
+        html: `<div style="width:9px;height:9px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 0 5px ${color};"></div>`,
+        iconSize: [9, 9], iconAnchor: [4, 4],
+      })
+      L.marker(latlngs[0], { icon: startIcon }).addTo(layer)
+
+      // Hedef marker (talep konumu)
+      const destIcon = L.divIcon({
+        className: '',
+        html: `<div style="width:11px;height:11px;border-radius:50%;background:#f87171;border:2px solid white;box-shadow:0 0 6px #f87171;"></div>`,
+        iconSize: [11, 11], iconAnchor: [5, 5],
+      })
+      L.marker([route.destLat, route.destLon], { icon: destIcon })
+        .bindPopup(`<b style="color:#f87171">Talep Konumu</b><br/><span style="color:#aaa">${NEED_LABELS[route.needType] ?? route.needType}</span>`)
+        .addTo(layer)
+    })
+  }, [activeRoutes, layers.routes, canSeeTeams])
+
   // ── User location ────────────────────────────────────────────────
   const goToMyLocation = () => {
     if (!navigator.geolocation) {
@@ -230,6 +375,38 @@ export default function MapPage() {
       () => {
         setLocError('Konum alınamadı. Tarayıcı iznini kontrol edin.')
         setLocLoading(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
+
+  // ── Calculate route from browser location ───────────────────────
+  const handleMapCalculateRoute = () => {
+    if (!selectedMapRequest) return
+    if (!navigator.geolocation) {
+      setMapRouteError('Tarayıcınız konum desteklemiyor.')
+      return
+    }
+    setMapRouteLoading(true)
+    setMapRouteError('')
+    navigator.geolocation.getCurrentPosition(
+      async pos => {
+        try {
+          const result = await apiCalculateRoute(
+            selectedMapRequest.id,
+            pos.coords.latitude,
+            pos.coords.longitude,
+          )
+          setMapLiveRoute(result)
+        } catch {
+          setMapRouteError('Rota hesaplanamadı.')
+        } finally {
+          setMapRouteLoading(false)
+        }
+      },
+      () => {
+        setMapRouteError('Konum alınamadı. Tarayıcı iznini kontrol edin.')
+        setMapRouteLoading(false)
       },
       { enableHighAccuracy: true, timeout: 10000 }
     )
@@ -280,7 +457,7 @@ export default function MapPage() {
         <Box>
           <Heading size="lg" color="white" fontWeight="800">Harita</Heading>
           <Text color="rgba(255,255,255,0.4)" fontSize="sm" mt={0.5}>
-            Depremler · Toplanma Alanları{canSeeTeams ? ' · Ekipler' : ''}
+            Depremler · Toplanma Alanları{canSeeTeams ? ' · Ekipler · Aktif Rotalar' : ''}
           </Text>
         </Box>
         <Flex align="center" gap={2} flexWrap="wrap">
@@ -321,6 +498,14 @@ export default function MapPage() {
             {canSeeTeams && (
               <LayerBtn active={layers.teams} color="#60a5fa"
                 onClick={() => toggle('teams')} label={`Ekipler (${teams.length})`} />
+            )}
+            {canSeeTeams && (
+              <LayerBtn active={layers.routes} color="#fb923c"
+                onClick={() => toggle('routes')} label={`Rotalar (${activeRoutes.length})`} />
+            )}
+            {canSeeTeams && (
+              <LayerBtn active={layers.requests} color="#f87171"
+                onClick={() => toggle('requests')} label={`Talepler (${activeMapRequests.length})`} />
             )}
           </ButtonGroup>
         </Flex>
@@ -368,6 +553,138 @@ export default function MapPage() {
         {/* Leaflet container */}
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
+        {/* Selected request panel */}
+        {selectedMapRequest && (
+          <Box
+            position="absolute" top={4} right={4} zIndex={1001}
+            w="270px"
+            bg={panelBg} backdropFilter="blur(16px)"
+            border={`1px solid ${panelBorder}`} borderRadius="2xl"
+            maxH="calc(100% - 32px)" overflowY="auto"
+            sx={{
+              '&::-webkit-scrollbar': { width: '3px' },
+              '&::-webkit-scrollbar-thumb': { bg: 'rgba(255,255,255,0.15)', borderRadius: '3px' },
+            }}
+          >
+            {/* Panel header */}
+            <Flex align="center" justify="space-between" px={4} pt={4} pb={3}
+              borderBottom={`1px solid ${panelBorder}`}>
+              <Box>
+                <Text fontSize="xs" fontWeight="700" color={txtMain}>
+                  {NEED_LABELS_MAP[selectedMapRequest.needType] ?? selectedMapRequest.needType}
+                </Text>
+                <Text fontSize="10px" color={textFaint} mt={0.5}>
+                  {selectedMapRequest.personCount} kişi · Aciliyet {selectedMapRequest.urgencyLevel}/5
+                </Text>
+              </Box>
+              <Button size="xs" variant="ghost"
+                color={textMuted} onClick={() => { setSelectedMapRequest(null); setMapLiveRoute(null) }}
+                minW={0} px={1.5} _hover={{ color: '#f87171' }}>✕</Button>
+            </Flex>
+
+            {/* Status badge */}
+            <Box px={4} py={3} borderBottom={`1px solid ${panelBorder}`}>
+              <Flex gap={2} align="center">
+                <Box w={2} h={2} borderRadius="full"
+                  bg={selectedMapRequest.assignmentStatus === 'EN_ROUTE' ? '#fb923c' : '#fbbf24'} />
+                <Text fontSize="11px" color={selectedMapRequest.assignmentStatus === 'EN_ROUTE' ? '#fb923c' : '#fbbf24'}
+                  fontWeight="700">
+                  {selectedMapRequest.assignmentStatus === 'EN_ROUTE' ? 'Ekip Yolda' : 'Ekip Atandı'}
+                </Text>
+              </Flex>
+              <Text fontSize="10px" color={textFaint} mt={1}>
+                {selectedMapRequest.latitude.toFixed(5)}, {selectedMapRequest.longitude.toFixed(5)}
+              </Text>
+            </Box>
+
+            {/* Route calc button */}
+            <Box px={4} py={3} borderBottom={`1px solid ${panelBorder}`}>
+              <Button
+                size="sm" w="full"
+                onClick={handleMapCalculateRoute}
+                isLoading={mapRouteLoading}
+                loadingText="Hesaplanıyor..."
+                bg="rgba(251,146,60,0.12)" color="#fb923c"
+                border="1px solid rgba(251,146,60,0.35)"
+                borderRadius="lg" fontWeight="700" fontSize="xs"
+                _hover={{ bg: 'rgba(251,146,60,0.2)' }}
+              >
+                📍 Konumdan Rota Hesapla
+              </Button>
+              {mapRouteError && (
+                <Text fontSize="10px" color="#f87171" mt={1.5} textAlign="center">{mapRouteError}</Text>
+              )}
+            </Box>
+
+            {/* Route result */}
+            {mapLiveRoute && (
+              <>
+                <Box px={4} py={3} borderBottom={`1px solid ${panelBorder}`}>
+                  <Flex justify="space-between" mb={1}>
+                    <Text fontSize="10px" color={textFaint}>Mesafe</Text>
+                    <Text fontSize="11px" fontWeight="700" color="#fb923c">
+                      {mapLiveRoute.distance_km.toFixed(1)} km
+                    </Text>
+                  </Flex>
+                  <Flex justify="space-between" mb={1}>
+                    <Text fontSize="10px" color={textFaint}>Süre</Text>
+                    <Text fontSize="11px" fontWeight="700" color="#fb923c">
+                      ~{Math.round(mapLiveRoute.duration_min)} dk
+                    </Text>
+                  </Flex>
+                  {mapLiveRoute.damage_score > 0 && (
+                    <Flex justify="space-between">
+                      <Text fontSize="10px" color={textFaint}>Yol Hasarı</Text>
+                      <Text fontSize="11px" fontWeight="700"
+                        color={mapLiveRoute.damage_score > 0.7 ? '#f87171' : mapLiveRoute.damage_score > 0.4 ? '#fb923c' : '#4ade80'}>
+                        {(mapLiveRoute.damage_score * 100).toFixed(0)}%
+                      </Text>
+                    </Flex>
+                  )}
+                </Box>
+
+                {/* Nav steps */}
+                {mapLiveRoute.steps && mapLiveRoute.steps.length > 0 && (
+                  <Box px={4} py={3}>
+                    <Text fontSize="10px" fontWeight="700" color={textMuted}
+                      textTransform="uppercase" letterSpacing="wider" mb={2}>Yol Tarifi</Text>
+                    <Stack spacing={1.5}>
+                      {mapLiveRoute.steps.slice(0, 8).map((step, i) => (
+                        <Flex key={i} gap={2} align="flex-start">
+                          <Box
+                            flexShrink={0} w={5} h={5} borderRadius="md"
+                            bg={light ? '#f1f5f9' : 'rgba(255,255,255,0.06)'}
+                            border={`1px solid ${panelBorder}`}
+                            display="flex" alignItems="center" justifyContent="center"
+                          >
+                            <Text fontSize="8px" fontWeight="800" color="#fb923c">{i + 1}</Text>
+                          </Box>
+                          <Box flex={1}>
+                            <Text fontSize="10px" color={txtMain} lineHeight="1.3">{step.instruction}</Text>
+                            {step.street_name && (
+                              <Text fontSize="9px" color={textFaint} mt={0.5}>{step.street_name}</Text>
+                            )}
+                            <Text fontSize="9px" color={textFaint}>
+                              {step.distance_m < 1000
+                                ? `${step.distance_m.toFixed(0)} m`
+                                : `${(step.distance_m / 1000).toFixed(1)} km`}
+                            </Text>
+                          </Box>
+                        </Flex>
+                      ))}
+                      {mapLiveRoute.steps.length > 8 && (
+                        <Text fontSize="9px" color={textFaint} textAlign="center">
+                          +{mapLiveRoute.steps.length - 8} adım daha
+                        </Text>
+                      )}
+                    </Stack>
+                  </Box>
+                )}
+              </>
+            )}
+          </Box>
+        )}
+
         {/* Legend */}
         <Box position="absolute" bottom={4} right={4} zIndex={999}
           bg={panelBg} backdropFilter="blur(12px)"
@@ -391,6 +708,25 @@ export default function MapPage() {
                 <Text fontSize="xs" color={textFaint}>Ekip Konumu</Text>
               </Flex>
             )}
+            {canSeeTeams && (
+              <Flex align="center" gap={2}>
+                <Box w={5} h={0.5} bg="#fbbf24" opacity={0.9} flexShrink={0} borderRadius="full" />
+                <Text fontSize="xs" color={textFaint}>Rota (Atandı)</Text>
+              </Flex>
+            )}
+            {canSeeTeams && (
+              <Flex align="center" gap={2}>
+                <Box w={5} h={0.5} bg="#fb923c" opacity={0.9} flexShrink={0} borderRadius="full" />
+                <Text fontSize="xs" color={textFaint}>Rota (Yolda)</Text>
+              </Flex>
+            )}
+            {canSeeTeams && (
+              <Flex align="center" gap={2}>
+                <Box w={3} h={3} borderRadius="full" bg="#f87171" opacity={0.85} flexShrink={0}
+                  boxShadow="0 0 5px #f87171" />
+                <Text fontSize="xs" color={textFaint}>Aktif Talep</Text>
+              </Flex>
+            )}
             {userLocation && (
               <Flex align="center" gap={2}>
                 <Box w={3} h={3} borderRadius="full" bg="#818cf8" flexShrink={0}
@@ -408,9 +744,13 @@ export default function MapPage() {
             border={`1px solid ${panelBorder}`} borderRadius="xl" px={4} py={2.5}>
             <Flex gap={5}>
               {[
-                { v: earthquakes.length, l:'Deprem',   c:'#fb923c' },
-                { v: safeAreas.length,   l:'Toplanma', c:'#4ade80' },
-                ...(canSeeTeams ? [{ v: teams.length, l:'Ekip', c:'#60a5fa' }] : []),
+                { v: earthquakes.length,  l:'Deprem',   c:'#fb923c' },
+                { v: safeAreas.length,    l:'Toplanma', c:'#4ade80' },
+                ...(canSeeTeams ? [
+                  { v: teams.length,             l:'Ekip',   c:'#60a5fa' },
+                  { v: activeRoutes.length,      l:'Rota',   c:'#fbbf24' },
+                  { v: activeMapRequests.length, l:'Talep',  c:'#f87171' },
+                ] : []),
               ].map(s => (
                 <Box key={s.l} textAlign="center">
                   <Text fontSize="sm" fontWeight="700" color={s.c}>{s.v}</Text>

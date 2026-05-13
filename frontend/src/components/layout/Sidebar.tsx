@@ -21,12 +21,12 @@ const Icons = {
   simulation:<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>,
 }
 
-const mainNav = [
-  { label: 'Dashboard',        icon: Icons.dashboard,  path: '/dashboard', badge: null },
-  { label: 'Talepler',         icon: Icons.requests,   path: '/requests',  badge: 24   },
-  { label: 'STK Yetkililer',   icon: Icons.volunteers, path: '/volunteers', badge: null },
-  { label: 'Resmi Yetkililer', icon: Icons.resources,  path: '/officials',  badge: null },
-  { label: 'Harita',           icon: Icons.map,        path: '/map',       badge: null },
+const baseNav = [
+  { label: 'Dashboard',        icon: Icons.dashboard,  path: '/dashboard',  badge: null, roles: null },
+  { label: 'Talepler',         icon: Icons.requests,   path: '/requests',   badge: 24,   roles: null },
+  { label: 'STK Yetkililer',   icon: Icons.volunteers, path: '/volunteers', badge: null, roles: ['ADMIN', 'NGO_MANAGER', 'OFFICIAL_MANAGER'] },
+  { label: 'Resmi Yetkililer', icon: Icons.resources,  path: '/officials',  badge: null, roles: ['ADMIN', 'OFFICIAL_MANAGER'] },
+  { label: 'Harita',           icon: Icons.map,        path: '/map',        badge: null, roles: null },
 ]
 const analysisNav = [
   { label: 'Sismik Veriler', icon: Icons.seismic,     path: '/seismic',    badge: null },
@@ -83,6 +83,7 @@ function Sidebar() {
   const { pathname } = useLocation()
   const role = getRole()
   const roleInfo = (role && roleLabel[role]) ? roleLabel[role] : { label: 'Yetkili', color: '#818cf8' }
+  const mainNav = baseNav.filter(item => !item.roles || item.roles.includes(role ?? ''))
 
   return (
     <MotionFlex
