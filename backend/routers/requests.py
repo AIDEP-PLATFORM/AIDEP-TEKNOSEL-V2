@@ -2,20 +2,21 @@ import logging
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from core.dependencies import get_current_user
 from models.request import AssignmentStatus, NeedType, RequestStatus
 from models.user import User, UserRole
+from schemas.photo import DamagePhotoResponse
 from schemas.request import (
     AssignmentStatusUpdate,
     HelpRequestCreate,
     HelpRequestResponse,
     MatchingRunResponse,
 )
-from services import matching_service, request_service
+from services import matching_service, request_service, photo_service
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,43 @@ async def update_assignment_status(
     # Güncel talep bilgisini döndür
     req = await request_service.get_request(db, request_id)
     return HelpRequestResponse.model_validate(req)
+
+
+# ─── Hasar Fotoğrafı Yükleme ───────────────────────────────────
+
+@router.post(
+    "/{request_id}/photos",
+    response_model=DamagePhotoResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Yardım talebine hasar fotoğrafı yükle",
+)
+async def upload_damage_photo(
+    request_id: UUID,
+    file: UploadFile = File(..., description="Hasar fotoğrafı (JPEG/PNG/WEBP, max 10 MB)"),
+    latitude: Optional[float] = Form(None, ge=-90, le=90, description="Fotoğraf konumu enlem"),
+    longitude: Optional[float] = Form(None, ge=-180, le=180, description="Fotoğraf konumu boylam"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Yardım talebine hasar fotoğrafı yükler.
+
+    - Fotoğraf AWS S3'e kaydedilir.
+    - YOLOv8 modeli ile hasar analizi yapılır ve `damage_score` döner.
+    - Talebin `area_damage_score` alanı tüm fotoğrafların ortalamasıyla güncellenir.
+    - AI servisi erişilemezse fotoğraf yine de kaydedilir; `damage_score` boş kalır.
+    - Erişim: Tüm kayıtlı kullanıcılar (vatandaş dahil).
+    """
+    photo = await photo_service.upload_damage_photo(
+        db=db,
+        request_id=request_id,
+        file=file,
+        user=current_user,
+        latitude=latitude,
+        longitude=longitude,
+    )
+    response = DamagePhotoResponse.model_validate(photo)
+    response.analysis_success = photo.damage_score is not None
+    return response
 
 
 # ─── Eşleştirme Tetikleme ───────────────────────────────────────

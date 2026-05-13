@@ -91,6 +91,10 @@ class HelpRequest(Base):
         "Assignment", back_populates="help_request",
         uselist=False, cascade="all, delete-orphan"
     )
+    photos: Mapped[list["DamagePhoto"]] = relationship(  # noqa: F821
+        "DamagePhoto", back_populates="help_request",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<HelpRequest id={self.id} need={self.need_type} status={self.status}>"
