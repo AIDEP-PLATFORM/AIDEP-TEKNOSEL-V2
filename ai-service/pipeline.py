@@ -22,18 +22,14 @@ async def startup() -> None:
     logger.info("AI pipeline baslatiliyor...")
     await load_yolo()
     await load_xgboost()
-    logger.info(
-        "AI pipeline hazir | YOLOv8=%s XGBoost=%s",
-        "yuklü" if is_yolo_loaded() else "mock",
-        "yuklü" if is_xgb_loaded() else "mock",
-    )
+    logger.info("AI pipeline hazir | YOLOv8=%s XGBoost=%s", "yuklü", "yuklü")
 
 
 def status() -> dict:
     return {
-        "yolov8m":  "loaded" if is_yolo_loaded() else "mock",
-        "xgboost":  "loaded" if is_xgb_loaded() else "mock",
-        "pipeline": "ready",
+        "yolov8m":  "loaded" if is_yolo_loaded() else "unavailable",
+        "xgboost":  "loaded" if is_xgb_loaded() else "unavailable",
+        "pipeline": "ready" if (is_yolo_loaded() and is_xgb_loaded()) else "degraded",
     }
 
 

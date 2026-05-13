@@ -68,11 +68,11 @@ async def _fetch_osrm_route(
             "geometry":         route.get("geometry"),
         }
     except Exception as exc:
-        logger.warning("OSRM erisim hatasi: %s — mock rota kullaniliyor", exc)
-        return _mock_route(origin_lat, origin_lon, dest_lat, dest_lon)
+        logger.warning("OSRM erisim hatasi: %s — haversine rota kullaniliyor", exc)
+        return _haversine_route(origin_lat, origin_lon, dest_lat, dest_lon)
 
 
-def _mock_route(olat: float, olon: float, dlat: float, dlon: float) -> dict:
+def _haversine_route(olat: float, olon: float, dlat: float, dlon: float) -> dict:
     dist = _haversine(olat, olon, dlat, dlon)
     return {
         "distance_km":      round(dist, 3),

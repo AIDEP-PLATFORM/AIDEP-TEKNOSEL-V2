@@ -1,6 +1,6 @@
 import logging
 from collections import defaultdict
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import HTTPException, status
@@ -110,7 +110,7 @@ async def run_matching(db: AsyncSession, current_user: User) -> dict:
 
     for assignment_data in assignments:
         request_id = assignment_data["request_id"]
-        team_id = assignment_data["volunteer_id"]  # AI bunu volunteer_id olarak döndürür
+        team_id = UUID(assignment_data["volunteer_id"])  # AI string döndürür, UUID'e çevir
 
         req = next((r for r in pending_requests if str(r.id) == request_id), None)
         if not req:

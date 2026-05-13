@@ -7,7 +7,6 @@ from core.redis import get_redis
 from core.mongodb import get_collection
 from models.yolo_model import (
     predict_sync,
-    is_yolo_loaded,
     ROAD_CLASSES,
     BUILDING_CLASSES,
     CLASS_DAMAGE_SCORES,
@@ -71,7 +70,7 @@ async def _save_to_mongodb(
             "damage_score": round(damage_score * 100, 2),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "multi_confirm_count": multi_confirm_count,
-            "model_source": "yolov8" if is_yolo_loaded() else "mock",
+            "model_source": "yolov8m",
         }
         await collection.insert_one(doc)
     except Exception as exc:
@@ -123,7 +122,7 @@ async def analyze_photo(
         grid_confirmed_count=count,
         grid_aggregated_score=aggregated,
         is_confirmed=is_confirmed,
-        model_source="yolov8m" if is_yolo_loaded() else "mock",
+        model_source="yolov8m",
     )
 
 

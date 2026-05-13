@@ -3,7 +3,7 @@ import logging
 
 import numpy as np
 
-from models.xgboost_model import predict_sync, is_xgb_loaded
+from models.xgboost_model import predict_sync
 from schemas.priority import PriorityRequest, PriorityResponse
 from services.weather import get_meteorology_score
 
@@ -69,7 +69,7 @@ async def score_request(req: PriorityRequest, _semaphore: asyncio.Semaphore | No
         request_id=req.request_id,
         priority_score=raw_score,
         priority_class=priority_class,
-        model_source="xgboost" if is_xgb_loaded() else "mock",
+        model_source="xgboost",
     )
 
 
