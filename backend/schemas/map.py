@@ -20,12 +20,14 @@ class SafeAreaPoint(BaseModel):
     capacity: Optional[str] = None
 
 
-class VolunteerLocation(BaseModel):
-    user_id: str
-    full_name: str
-    role: str
+class TeamLocation(BaseModel):
+    team_id: str
+    team_name: str
     latitude: float
     longitude: float
+    member_count: int
+    located_member_count: int
+    active_task_count: int
     organization_name: Optional[str] = None
     organization_city: Optional[str] = None
     organization_district: Optional[str] = None
@@ -45,4 +47,4 @@ class MapSafeAreasResponse(BaseModel):
 
 class MapTeamsResponse(BaseModel):
     count: int
-    data: list[VolunteerLocation]
+    data: list[TeamLocation]
