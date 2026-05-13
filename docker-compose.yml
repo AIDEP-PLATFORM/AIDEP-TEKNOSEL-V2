@@ -174,6 +174,8 @@ services:
     platform: linux/amd64
     container_name: aidep_frontend
     restart: unless-stopped
+    env_file:
+      - ./frontend/.env
     ports:
       - "${FRONTEND_PORT:-3000}:5173"
     depends_on:
@@ -183,8 +185,6 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
-    environment:
-      - VITE_API_URL=${VITE_API_URL:-http://localhost:8001}
 
 networks:
   aidep_network:
