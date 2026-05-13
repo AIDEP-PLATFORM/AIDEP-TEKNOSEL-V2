@@ -13,7 +13,7 @@ const pageTitles: Record<string, { title: string; sub: string }> = {
   '/volunteers':{ title: 'Gönüllüler',   sub: 'Gönüllü yönetimi' },
   '/map':       { title: 'Harita',       sub: 'Aktif bölge görünümü' },
   '/seismic':   { title: 'Sismik Veriler', sub: 'Son 24 saat aktivite' },
-  '/ai':        { title: 'AI Tahminler', sub: 'Yapay zeka öngörüleri' },
+  '/simulation':{ title: 'Simülasyon',  sub: 'Deprem senaryo analizi' },
   '/resources': { title: 'Kaynaklar',    sub: 'Kaynak yönetimi' },
   '/profile':   { title: 'Profilim',     sub: 'Hesap bilgilerim' },
   '/teams':     { title: 'Ekip Yönetimi', sub: 'Saha ekiplerini yönet' },
