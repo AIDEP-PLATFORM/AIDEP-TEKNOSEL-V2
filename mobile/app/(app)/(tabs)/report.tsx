@@ -4,6 +4,7 @@ import {
   TextInput, Alert, Image, FlatList, Modal,
   ScrollView, ActivityIndicator,
 } from 'react-native';
+import MapView, { Marker, PROVIDER_DEFAULT, type MapPressEvent } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
@@ -13,9 +14,12 @@ import * as Location from 'expo-location';
 import { Colors, FontSize, Spacing, BorderRadius } from '@/constants/theme';
 import { aiService } from '@/services/ai.service';
 import { useAuthStore } from '@/store/auth.store';
+import { useDamageStore } from '@/store/damage.store';
 import { DamageDetectionResponse } from '@/types/ai.types';
 
 const MAX_PHOTOS = 5;
+
+type Coords = { latitude: number; longitude: number };
 
 type ReportItem = {
   id: string;
@@ -25,6 +29,7 @@ type ReportItem = {
   status: 'analyzing' | 'done' | 'error';
   aiResult: DamageDetectionResponse | null;
   errorMessage: string | null;
+  location: Coords | null;
 };
 
 function damageScoreLabel(score: number): string {
@@ -49,6 +54,7 @@ export default function ReportScreen() {
   const insets = useSafeAreaInsets();
   const { openCamera } = useLocalSearchParams<{ openCamera?: string }>();
   const token = useAuthStore((s) => s.tokens?.accessToken);
+  const addDamageReport = useDamageStore((s) => s.addReport);
 
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<string[]>([]);
@@ -56,6 +62,13 @@ export default function ReportScreen() {
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [selectedReport, setSelectedReport] = useState<ReportItem | null>(null);
   const lastHandledCamera = useRef<string | null>(null);
+
+  // Konum seçici
+  const [locationPickerVisible, setLocationPickerVisible] = useState(false);
+  const [pickerTempCoords, setPickerTempCoords]           = useState<Coords | null>(null);
+  const [selectedLocation, setSelectedLocation]           = useState<Coords | null>(null);
+  const [locationLabel, setLocationLabel]                 = useState<string | null>(null);
+  const [mapCenter, setMapCenter]                         = useState<Coords>({ latitude: 39.9255, longitude: 32.8662 });
 
   useFocusEffect(
     useCallback(() => {
@@ -66,6 +79,47 @@ export default function ReportScreen() {
       }
     }, [openCamera])
   );
+
+  const openLocationPicker = async () => {
+    // Önce mevcut GPS konumuna haritayı götür
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+        setMapCenter(coords);
+        // Eğer daha önce seçilmişse onu koru, yoksa GPS'i varsayılan yap
+        if (!pickerTempCoords) setPickerTempCoords(coords);
+      }
+    } catch {}
+    setLocationPickerVisible(true);
+  };
+
+  const handleMapPickerPress = (e: MapPressEvent) => {
+    setPickerTempCoords(e.nativeEvent.coordinate);
+  };
+
+  const confirmLocation = async () => {
+    if (!pickerTempCoords) return;
+    setSelectedLocation(pickerTempCoords);
+    setLocationPickerVisible(false);
+    // Ters geocode ile adres al
+    try {
+      const [place] = await Location.reverseGeocodeAsync(pickerTempCoords);
+      if (place) {
+        const parts = [place.street, place.district, place.city].filter(Boolean);
+        setLocationLabel(parts.join(', ') || `${pickerTempCoords.latitude.toFixed(5)}, ${pickerTempCoords.longitude.toFixed(5)}`);
+      }
+    } catch {
+      setLocationLabel(`${pickerTempCoords.latitude.toFixed(5)}, ${pickerTempCoords.longitude.toFixed(5)}`);
+    }
+  };
+
+  const clearLocation = () => {
+    setSelectedLocation(null);
+    setPickerTempCoords(null);
+    setLocationLabel(null);
+  };
 
   const pickFromGallery = async () => {
     if (photos.length >= MAX_PHOTOS) return;
@@ -117,24 +171,47 @@ export default function ReportScreen() {
       status: 'analyzing',
       aiResult: null,
       errorMessage: null,
+      location: selectedLocation,
     };
 
     setReports((prev) => [newReport, ...prev]);
     setDescription('');
     setPhotos([]);
+    clearLocation();
     setLoading(false);
 
     // Arka planda AI analizi yap
     if (newReport.photoUri) {
       try {
-        const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
         let latitude = 39.9255;
         let longitude = 32.8662;
-        if (locStatus === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          latitude = loc.coords.latitude;
-          longitude = loc.coords.longitude;
+
+        if (newReport.location) {
+          // Manuel seçilen konum öncelikli
+          latitude  = newReport.location.latitude;
+          longitude = newReport.location.longitude;
+        } else {
+          // GPS'e dön
+          const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
+          if (locStatus === 'granted') {
+            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            latitude  = loc.coords.latitude;
+            longitude = loc.coords.longitude;
+          }
         }
+
+        // Koordinat belli olduktan sonra harita store'una ekle
+        addDamageReport({
+          id: newReport.id,
+          userId: '',
+          coordinates: { latitude, longitude },
+          photoUrls: newReport.photoUri ? [newReport.photoUri] : [],
+          damageLevel: 'medium',
+          status: 'analyzing',
+          description: newReport.description,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
 
         const result = await aiService.analyzeDamage(newReport.photoUri, latitude, longitude, token);
         setReports((prev) =>
@@ -147,6 +224,33 @@ export default function ReportScreen() {
         );
       }
     } else {
+      // Fotoğraf yoksa GPS al ve store'a ekle
+      try {
+        let latitude = 39.9255;
+        let longitude = 32.8662;
+        if (newReport.location) {
+          latitude  = newReport.location.latitude;
+          longitude = newReport.location.longitude;
+        } else {
+          const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
+          if (locStatus === 'granted') {
+            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            latitude  = loc.coords.latitude;
+            longitude = loc.coords.longitude;
+          }
+        }
+        addDamageReport({
+          id: newReport.id,
+          userId: '',
+          coordinates: { latitude, longitude },
+          photoUrls: [],
+          damageLevel: 'low',
+          status: 'done',
+          description: newReport.description,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      } catch {}
       setReports((prev) =>
         prev.map((r) => r.id === newReport.id ? { ...r, status: 'done' } : r)
       );
@@ -273,6 +377,39 @@ export default function ReportScreen() {
               <Text style={[styles.photoBtnLabel, { color: '#7c3aed' }]}>Galeri</Text>
             </TouchableOpacity>
           </View>
+
+          <View style={styles.divider} />
+
+          {/* Konum Seçici */}
+          <View style={styles.locationHeader}>
+            <View style={styles.photoTitleRow}>
+              <View style={[styles.photoTitleBar, { backgroundColor: Colors.success }]} />
+              <Text style={styles.photoTitle}>HASAR KONUMU</Text>
+            </View>
+          </View>
+
+          {selectedLocation ? (
+            <View style={styles.locationSelectedRow}>
+              <Ionicons name="location" size={16} color={Colors.success} />
+              <Text style={styles.locationSelectedText} numberOfLines={2}>
+                {locationLabel ?? `${selectedLocation.latitude.toFixed(5)}, ${selectedLocation.longitude.toFixed(5)}`}
+              </Text>
+              <TouchableOpacity onPress={clearLocation} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            style={[styles.photoBtn, { borderColor: Colors.success, flex: undefined }]}
+            onPress={openLocationPicker}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="map-outline" size={18} color={Colors.success} />
+            <Text style={[styles.photoBtnLabel, { color: Colors.success }]}>
+              {selectedLocation ? 'Konumu Değiştir' : 'Haritadan Konum Seç'}
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* Gönder butonu */}
@@ -323,6 +460,78 @@ export default function ReportScreen() {
           }
         />
       </View>
+
+      {/* ── Konum Seçici Modal ── */}
+      <Modal
+        visible={locationPickerVisible}
+        animationType="slide"
+        onRequestClose={() => setLocationPickerVisible(false)}
+      >
+        <View style={styles.pickerContainer}>
+          {/* Başlık */}
+          <View style={[styles.pickerHeader, { paddingTop: insets.top + 12 }]}>
+            <TouchableOpacity style={styles.pickerCloseBtn} onPress={() => setLocationPickerVisible(false)}>
+              <Ionicons name="close" size={20} color={Colors.text} />
+            </TouchableOpacity>
+            <Text style={styles.pickerTitle}>Hasar Konumunu Seç</Text>
+            <TouchableOpacity
+              style={[styles.pickerConfirmBtn, !pickerTempCoords && { opacity: 0.4 }]}
+              onPress={confirmLocation}
+              disabled={!pickerTempCoords}
+            >
+              <Text style={styles.pickerConfirmText}>Onayla</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Harita */}
+          <MapView
+            style={StyleSheet.absoluteFillObject}
+            provider={PROVIDER_DEFAULT}
+            initialRegion={{ ...mapCenter, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
+            onPress={handleMapPickerPress}
+            showsUserLocation
+          >
+            {pickerTempCoords && (
+              <Marker coordinate={pickerTempCoords}>
+                <View style={styles.pinMarker}>
+                  <Ionicons name="location" size={28} color={Colors.error} />
+                </View>
+              </Marker>
+            )}
+          </MapView>
+
+          {/* Alt bar: konumum butonu + ipucu */}
+          <View style={[styles.pickerBottomBar, { bottom: insets.bottom + 16 }]}>
+            <TouchableOpacity
+              style={styles.myLocationBtn}
+              onPress={async () => {
+                try {
+                  const { status } = await Location.requestForegroundPermissionsAsync();
+                  if (status !== 'granted') {
+                    Alert.alert('İzin Gerekli', 'Konum erişimi için izin vermelisiniz.');
+                    return;
+                  }
+                  const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+                  setPickerTempCoords({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+                  setMapCenter({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+                } catch {
+                  Alert.alert('Hata', 'Konum alınamadı.');
+                }
+              }}
+            >
+              <Ionicons name="navigate" size={16} color={Colors.primary} />
+              <Text style={styles.myLocationBtnText}>Konumum</Text>
+            </TouchableOpacity>
+
+            <View style={styles.pickerHint}>
+              <Ionicons name="information-circle-outline" size={14} color={Colors.textSecondary} />
+              <Text style={styles.pickerHintText}>
+                {pickerTempCoords ? 'Değiştirmek için haritaya dokun' : 'Hasar noktasına dokunun'}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── AI Sonuç Modalı ── */}
       <Modal
@@ -549,6 +758,56 @@ const styles = StyleSheet.create({
   },
   modalDescLabel: { fontSize: FontSize.xs, color: Colors.textMuted, fontWeight: '600' },
   modalDescText: { fontSize: FontSize.sm, color: Colors.text, lineHeight: 20 },
+
+  // Konum seçici
+  locationHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  locationSelectedRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(34,197,94,0.08)',
+    borderRadius: BorderRadius.md, padding: Spacing.sm,
+    borderWidth: 1, borderColor: 'rgba(34,197,94,0.25)',
+  },
+  locationSelectedText: {
+    flex: 1, fontSize: FontSize.xs, color: Colors.text, lineHeight: 16,
+  },
+  pickerContainer: { flex: 1, backgroundColor: Colors.background },
+  pickerHeader: {
+    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: Spacing.md, paddingBottom: Spacing.sm,
+    backgroundColor: 'rgba(10,22,40,0.95)',
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  pickerCloseBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  pickerTitle: { flex: 1, fontSize: FontSize.md, fontWeight: '700', color: Colors.text, textAlign: 'center' },
+  pickerConfirmBtn: {
+    backgroundColor: Colors.success,
+    borderRadius: BorderRadius.lg, paddingHorizontal: 14, paddingVertical: 7,
+  },
+  pickerConfirmText: { fontSize: FontSize.sm, fontWeight: '700', color: '#fff' },
+  pinMarker: { alignItems: 'center' },
+  pickerBottomBar: {
+    position: 'absolute', left: Spacing.md, right: Spacing.md,
+    gap: Spacing.xs,
+  },
+  myLocationBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: 'rgba(6,182,212,0.15)',
+    borderRadius: BorderRadius.lg, paddingVertical: 11,
+    borderWidth: 1, borderColor: 'rgba(6,182,212,0.35)',
+  },
+  myLocationBtnText: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.primary },
+  pickerHint: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(10,22,40,0.9)',
+    borderRadius: BorderRadius.lg, padding: Spacing.sm,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  pickerHintText: { fontSize: FontSize.xs, color: Colors.textSecondary, flex: 1 },
 
   errorBox: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

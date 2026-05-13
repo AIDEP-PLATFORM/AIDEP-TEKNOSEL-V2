@@ -15,7 +15,7 @@ from core.config import settings
 
 logger = logging.getLogger(__name__)
 
-DAMAGE_AVOID_RADIUS_M = 500  # Hasar noktası etki yarıçapı (metre)
+DAMAGE_AVOID_RADIUS_M = 250  # Hasar noktası etki yarıçapı (metre)
 
 
 # ─── Haversine ─────────────────────────────────────────────────
@@ -52,6 +52,78 @@ def _route_damage_score(
 
 # ─── OSRM API ──────────────────────────────────────────────────
 
+async def _osrm_request(waypoints: list[tuple[float, float]], steps: bool) -> list[dict]:
+    """OSRM'e çok noktalı rota isteği atar. waypoints: [(lat, lon), ...]"""
+    coords_str = ";".join(f"{lon},{lat}" for lat, lon in waypoints)
+    alts = "3" if len(waypoints) == 2 else "false"
+    url = (
+        f"{settings.OSRM_URL}/route/v1/driving/{coords_str}"
+        f"?alternatives={alts}&overview=full&geometries=geojson&steps={'true' if steps else 'false'}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            return resp.json().get("routes", [])
+    except Exception as exc:
+        logger.debug("OSRM isteği başarısız: %s", exc)
+        return []
+
+
+def _build_route_entry(raw: dict, blocked_points: list[tuple[float, float]]) -> dict:
+    coords: list[list[float]] = raw["geometry"]["coordinates"]
+    return {
+        "distance_km":  raw["distance"] / 1000,
+        "duration_min": raw["duration"] / 60,
+        "geometry":     coords,
+        "damage_score": _route_damage_score(coords, blocked_points),
+        "steps":        [],
+        "_raw":         raw,
+    }
+
+
+def _safe_stopover(
+    dest_lat: float,
+    dest_lon: float,
+    blocked_points: list[tuple[float, float]],
+    offset_deg: float = 0.0036,  # ~400 m
+) -> list[tuple[float, float]]:
+    """
+    Hedefe en yakın hasar noktasını bulur.
+    O noktanın hedefe göre ters yönünde ~400m uzakta bir ara durak üretir.
+    Hem sağ hem sol tarafa birer durak döner (OSRM hangisini kullanabilirse).
+    """
+    if not blocked_points:
+        return []
+
+    # Hedefe en yakın hasar noktası
+    nearest = min(blocked_points, key=lambda p: _haversine_m(dest_lat, dest_lon, p[0], p[1]))
+    blat, blon = nearest
+
+    # Hasar → hedef yön vektörü (normalize)
+    dlat = dest_lat - blat
+    dlon = dest_lon - blon
+    length = math.sqrt(dlat ** 2 + dlon ** 2)
+    if length < 1e-9:
+        return []
+    nlat = dlat / length
+    nlon = dlon / length
+
+    # Hedefe ~400m uzak, hasar noktasının KARŞI yönünde → güvenli taraf
+    # (hasar→hedef vektörünün tersine gidiyoruz, yani hasardan kaçıyoruz)
+    stop_lat = dest_lat + nlat * offset_deg
+    stop_lon = dest_lon + nlon * offset_deg
+
+    # Dik yönde iki seçenek (sağ + sol) → ikisini de dene
+    perp_lat, perp_lon = -nlon, nlat
+    return [
+        (round(stop_lat + perp_lat * offset_deg * 0.5, 6),
+         round(stop_lon + perp_lon * offset_deg * 0.5, 6)),
+        (round(stop_lat - perp_lat * offset_deg * 0.5, 6),
+         round(stop_lon - perp_lon * offset_deg * 0.5, 6)),
+    ]
+
+
 async def get_best_route(
     origin_lat: float,
     origin_lon: float,
@@ -59,75 +131,90 @@ async def get_best_route(
     dest_lon: float,
     blocked_points: Optional[list[tuple[float, float]]] = None,
     include_steps: bool = False,
+    user_waypoints: Optional[list[tuple[float, float]]] = None,
 ) -> Optional[dict]:
     """
-    OSRM'den 3 alternatif rota ister.
-    Hasar noktalarından en uzak rotayı seçer.
+    Güvenli rota bulur.
 
-    Dönüş:
-        {
-            "distance_km": float,
-            "duration_min": float,
-            "geometry": [[lon, lat], ...],
-            "damage_score": int,
-            "steps": [                        # include_steps=True ise
-                {
-                    "instruction": "Sağa dönün",
-                    "street_name": "Atatürk Caddesi",
-                    "distance_m": 320,
-                    "duration_s": 45,
-                    "location": [lon, lat],
-                    "maneuver": "turn"
-                }, ...
-            ]
-        }
-    Ya da OSRM erişilemezse None.
+    1) Kullanıcı ara durakları varsa direkt o waypoint'lerden geçer.
+    2) Yoksa 3 standart alternatif ister, en az hasarlıyı seçer.
+    3) Hâlâ hasarlıysa hedefe ~400m uzak güvenli ara durak ekleyerek tekrar dener.
     """
+    import asyncio as _asyncio
     blocked_points = blocked_points or []
-    steps_param = "true" if include_steps else "false"
-    url = (
-        f"{settings.OSRM_URL}/route/v1/driving/"
-        f"{origin_lon},{origin_lat};{dest_lon},{dest_lat}"
-        f"?alternatives=3&overview=full&geometries=geojson&steps={steps_param}"
+    user_waypoints = user_waypoints or []
+
+    # ── 1. Kullanıcı ara durakları varsa direkt kullan ───────────
+    if user_waypoints:
+        all_wps = [(origin_lat, origin_lon)] + user_waypoints + [(dest_lat, dest_lon)]
+        raw_routes = await _osrm_request(all_wps, steps=False)
+        if raw_routes:
+            best = _build_route_entry(raw_routes[0], blocked_points)
+            if include_steps:
+                step_raws = await _osrm_request(all_wps, steps=True)
+                if step_raws:
+                    best["steps"] = _parse_steps(step_raws[0])
+            best.pop("_raw", None)
+            best["alternatives"] = []
+            logger.info(
+                "Kullanıcı ara durakları ile rota: %.1f km, damage_score=%d",
+                best["distance_km"], best["damage_score"],
+            )
+            return best
+
+    # ── 2. Standart 3 alternatif ─────────────────────────────────
+    raw_routes = await _osrm_request(
+        [(origin_lat, origin_lon), (dest_lat, dest_lon)], steps=False
     )
-
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception as exc:
-        logger.warning("OSRM unavailable (%s), falling back to straight-line distance", exc)
+    if not raw_routes:
+        logger.warning("OSRM unavailable, falling back to straight-line distance")
         return None
 
-    routes = data.get("routes", [])
-    if not routes:
-        return None
+    all_routes = [_build_route_entry(r, blocked_points) for r in raw_routes]
+    all_routes.sort(key=lambda r: r["damage_score"])
+    best = all_routes[0]
 
-    best = None
-    best_score = float("inf")
-    best_raw = None
+    # ── 3. Otomatik güvenli ara durak (rota hâlâ hasarlıysa) ─────
+    if best["damage_score"] > 0 and blocked_points:
+        stopovers = _safe_stopover(dest_lat, dest_lon, blocked_points)
 
-    for route in routes:
-        coords: list[list[float]] = route["geometry"]["coordinates"]
-        score = _route_damage_score(coords, blocked_points)
-        if score < best_score:
-            best_score = score
-            best_raw = route
-            best = {
-                "distance_km": route["distance"] / 1000,
-                "duration_min": route["duration"] / 60,
-                "geometry": coords,
-                "damage_score": score,
-                "steps": [],
-            }
+        async def _try_stopover(stop: tuple[float, float]) -> Optional[dict]:
+            raws = await _osrm_request(
+                [(origin_lat, origin_lon), stop, (dest_lat, dest_lon)], steps=False
+            )
+            if not raws:
+                return None
+            return _build_route_entry(raws[0], blocked_points)
 
-    if best and include_steps and best_raw:
-        best["steps"] = _parse_steps(best_raw)
+        stopover_results = await _asyncio.gather(*[_try_stopover(s) for s in stopovers])
+        for candidate in stopover_results:
+            if candidate and candidate["damage_score"] < best["damage_score"]:
+                best = candidate
+                logger.info("Güvenli ara durak ile daha iyi rota: damage_score=%d", best["damage_score"])
+
+    # ── 4. Adımları ekle ─────────────────────────────────────────
+    if include_steps:
+        step_raws = await _osrm_request(
+            [(origin_lat, origin_lon), (dest_lat, dest_lon)], steps=True
+        )
+        if step_raws:
+            step_routes = sorted(
+                [_build_route_entry(r, blocked_points) for r in step_raws],
+                key=lambda r: r["damage_score"],
+            )
+            best["steps"] = _parse_steps(step_routes[0]["_raw"])
+            for r in step_routes:
+                r.pop("_raw", None)
+
+    # ── 5. Temizle ve döndür ──────────────────────────────────────
+    for r in all_routes:
+        r.pop("_raw", None)
+    best.pop("_raw", None)
+    best["alternatives"] = list(all_routes[1:])
 
     logger.info(
-        "OSRM best route: %.1f km, %.0f min, damage_score=%d (from %d alternatives)",
-        best["distance_km"], best["duration_min"], best["damage_score"], len(routes),
+        "OSRM best route: %.1f km, %.0f min, damage_score=%d",
+        best["distance_km"], best["duration_min"], best["damage_score"],
     )
     return best
 

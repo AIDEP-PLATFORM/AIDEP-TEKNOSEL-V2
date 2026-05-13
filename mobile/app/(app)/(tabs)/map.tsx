@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, ActivityIndicator, Platform, Alert, TextInput,
@@ -7,15 +8,18 @@ import MapView, {
   Marker, Circle, Polyline, Callout, PROVIDER_DEFAULT,
   type MapPressEvent,
 } from 'react-native-maps';
+// Circle kullanıcı konumu için hâlâ kullanılıyor
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, BorderRadius } from '@/constants/theme';
-import { mapService, EarthquakePoint, SafeAreaPoint, RouteData, RouteStep } from '@/services/map.service';
+import { mapService, EarthquakePoint, SafeAreaPoint, RouteData, RouteStep, AlternativeRoute } from '@/services/map.service';
 import { aiService } from '@/services/ai.service';
 import { useAuthStore } from '@/store/auth.store';
+import { useMapStore } from '@/store/map.store';
+import { useDamageStore } from '@/store/damage.store';
 import { DamageMapCell } from '@/types/ai.types';
 
 // ── Sabitler ────────────────────────────────────────────────────
@@ -49,11 +53,22 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+// Eşikler area_score formülüne (road×0.7 + bldg×0.3) göre ayarlandı:
+// yol_yikilmis(1.0)×0.7 = 0.70 → kırmızı
+// yol_cok_hasarli(0.8)×0.7 = 0.56 → kırmızı
+// yol_orta_hasarli(0.5)×0.7 = 0.35 → turuncu
 function damageGridColor(score: number): string {
-  if (score >= 0.75) return 'rgba(239,68,68,0.55)';
-  if (score >= 0.5)  return 'rgba(249,115,22,0.5)';
-  if (score >= 0.25) return 'rgba(234,179,8,0.45)';
-  return 'rgba(34,197,94,0.4)';
+  if (score >= 0.5)  return 'rgba(239,68,68,0.80)';   // kritik  → kırmızı
+  if (score >= 0.3)  return 'rgba(249,115,22,0.75)';  // riskli  → turuncu
+  if (score >= 0.1)  return 'rgba(234,179,8,0.72)';   // hafif   → sarı
+  return 'rgba(34,197,94,0.68)';                       // güvenli → yeşil
+}
+
+function damageGridStroke(score: number): string {
+  if (score >= 0.5)  return '#ef4444';
+  if (score >= 0.3)  return '#f97316';
+  if (score >= 0.1)  return '#eab308';
+  return '#22c55e';
 }
 
 function formatDuration(min: number): string {
@@ -79,6 +94,9 @@ export default function MapScreen() {
   const locationSubRef = useRef<Location.LocationSubscription | null>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const token = useAuthStore((s) => s.tokens?.accessToken);
+  const localDamageReports = useDamageStore((s) => s.reports);
+  const pendingTaskNav    = useMapStore((s) => s.pendingTaskNav);
+  const setPendingTaskNav = useMapStore((s) => s.setPendingTaskNav);
 
   // Harita verisi
   const [activeFilter, setActiveFilter] = useState('hasar');
@@ -95,11 +113,16 @@ export default function MapScreen() {
   const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
+  // Seçili toplanma alanı (bilgi kartı)
+  const [selectedSafeArea, setSelectedSafeArea] = useState<SafeAreaPoint | null>(null);
+
   // Navigasyon durumu
   const [routeMode, setRouteMode]       = useState<RouteMode>('idle');
   const [destination, setDestination]   = useState<{ latitude: number; longitude: number } | null>(null);
   const [route, setRoute]               = useState<RouteData | null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
+  const [userWaypoints, setUserWaypoints] = useState<{ latitude: number; longitude: number }[]>([]);
+  const [isAddingWaypoint, setIsAddingWaypoint] = useState(false);
   const [currentStepIdx, setCurrentStepIdx] = useState(0);
   const [navLocation, setNavLocation]   = useState<{ latitude: number; longitude: number } | null>(null);
   const [remainingKm, setRemainingKm]   = useState<number>(0);
@@ -119,6 +142,8 @@ export default function MapScreen() {
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
         setLocation(coords);
+        // visibleRegion'ı da güncelle ki marker filtreleri doğru çalışsın
+        setVisibleRegion({ ...coords, latitudeDelta: 0.05, longitudeDelta: 0.05 });
         mapRef.current?.animateToRegion({ ...coords, latitudeDelta: 0.05, longitudeDelta: 0.05 }, 800);
       } catch {
         setLocationError(true);
@@ -140,6 +165,27 @@ export default function MapScreen() {
     aiService.getDamageMap(token).then(setDamageGrid).catch(() => {});
   }, [token]);
 
+  // Harita her odaklandığında damage grid'i yenile (yeni raporlar görünsün)
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) return;
+      aiService.getDamageMap(token).then(setDamageGrid).catch(() => {});
+    }, [token])
+  );
+
+  // ── Ekibim tab'ından gelen görev navigasyonu ──────────────────
+  useEffect(() => {
+    if (!pendingTaskNav || !location) return;
+    // Store'u hemen temizle (tekrar tetiklenmesin)
+    setPendingTaskNav(null);
+    const dest = { latitude: pendingTaskNav.latitude, longitude: pendingTaskNav.longitude };
+    setDestination(dest);
+    setActiveFilter('guvenlirota');
+    setRouteMode('selecting');
+    // Kısa gecikme sonra rota hesapla (konum state settle olsun)
+    setTimeout(() => fetchRoute(dest), 200);
+  }, [pendingTaskNav, location]);
+
   // ── Görünür marker'ları optimize et ──────────────────────────
 
   const isZoomedIn = visibleRegion.latitudeDelta < 0.5;
@@ -153,15 +199,20 @@ export default function MapScreen() {
   }, [earthquakes, visibleRegion, isZoomedIn]);
 
   const visibleSafeAreas = useMemo(() => {
-    if (!isZoomedIn) {
-      const step = Math.ceil(safeAreas.length / 25);
-      return safeAreas.filter((_, i) => i % step === 0);
-    }
-    return safeAreas.filter(area =>
-      Math.abs(area.latitude - visibleRegion.latitude) < visibleRegion.latitudeDelta &&
-      Math.abs(area.longitude - visibleRegion.longitude) < visibleRegion.longitudeDelta
+    // Görünür bölgedeki alanları filtrele
+    const deltaLat = Math.max(visibleRegion.latitudeDelta, 0.15);
+    const deltaLon = Math.max(visibleRegion.longitudeDelta, 0.15);
+
+    const inView = safeAreas.filter(area =>
+      Math.abs(area.latitude - visibleRegion.latitude) < deltaLat &&
+      Math.abs(area.longitude - visibleRegion.longitude) < deltaLon
     );
-  }, [safeAreas, visibleRegion, isZoomedIn]);
+
+    // Android performansı için max 80 marker
+    if (inView.length <= 80) return inView;
+    const step = Math.ceil(inView.length / 80);
+    return inView.filter((_, i) => i % step === 0);
+  }, [safeAreas, visibleRegion]);
 
   // ── Rota polyline koordinatları ───────────────────────────────
 
@@ -169,6 +220,49 @@ export default function MapScreen() {
     if (!route) return [];
     return route.geometry.map(([lon, lat]) => ({ latitude: lat, longitude: lon }));
   }, [route]);
+
+  // ── Frontend hasar kontrolü: rota + tüm hasar kaynakları ──────
+  // Backend'in görmediği local raporları da dahil eder
+  const routeDamageCheck = useMemo(() => {
+    if (!route || routeCoords.length === 0) return { isRisky: false, count: 0, ratio: 0 };
+
+    // Backend damage_score'u normalize et (en güvenilir kaynak)
+    const backendRatio = route.geometry.length > 0
+      ? route.damage_score / route.geometry.length
+      : 0;
+
+    // Frontend: rota koordinatlarının kaçı hasar bölgesine yakın?
+    // Eşik: hasar noktasının görsel yarıçapına yakın (~50m = 0.00045°)
+    const RADIUS_DEG = 0.00045;
+    let hitRoutePoints = 0;
+
+    const allDamagePoints: { latitude: number; longitude: number }[] = [
+      ...damageGrid.map(c => ({ latitude: c.latitude, longitude: c.longitude })),
+      ...localDamageReports.map(r => ({ latitude: r.coordinates.latitude, longitude: r.coordinates.longitude })),
+    ];
+
+    for (const coord of routeCoords) {
+      const nearDamage = allDamagePoints.some(
+        dmg =>
+          Math.abs(coord.latitude - dmg.latitude) < RADIUS_DEG &&
+          Math.abs(coord.longitude - dmg.longitude) < RADIUS_DEG,
+      );
+      if (nearDamage) hitRoutePoints++;
+    }
+
+    // Rota noktalarının %5'inden fazlası hasar bölgesinden geçiyorsa riskli
+    const frontendRatio = hitRoutePoints / Math.max(routeCoords.length, 1);
+    const isRisky = backendRatio > 0.08 || frontendRatio > 0.05;
+    const count = allDamagePoints.filter(dmg =>
+      routeCoords.some(
+        coord =>
+          Math.abs(coord.latitude - dmg.latitude) < RADIUS_DEG &&
+          Math.abs(coord.longitude - dmg.longitude) < RADIUS_DEG,
+      )
+    ).length;
+
+    return { isRisky, count, ratio: Math.max(backendRatio, frontendRatio) };
+  }, [route, routeCoords, damageGrid, localDamageReports]);
 
   // ── Nominatim adres arama ─────────────────────────────────────
 
@@ -206,36 +300,53 @@ export default function MapScreen() {
   // ── Haritaya tıklama → varış noktası seç ─────────────────────
 
   const handleMapPress = async (e: MapPressEvent) => {
+    const coord = e.nativeEvent.coordinate;
+    if (isAddingWaypoint) {
+      // Sadece yola yakın noktalara izin ver
+      const snapped = await mapService.nearestRoad(coord.latitude, coord.longitude, token!);
+      if (!snapped) {
+        Alert.alert('Yol Bulunamadı', 'Lütfen bir yol üzerine dokunun.');
+        return;
+      }
+      const updatedWaypoints = [...userWaypoints, snapped];
+      setUserWaypoints(updatedWaypoints);
+      setIsAddingWaypoint(false);
+      if (destination) await fetchRoute(destination, updatedWaypoints);
+      return;
+    }
     if (routeMode !== 'selecting') return;
-    const dest = e.nativeEvent.coordinate;
-    setDestination(dest);
-    await fetchRoute(dest);
+    setDestination(coord);
+    await fetchRoute(coord);
   };
 
   // ── Rota hesapla ──────────────────────────────────────────────
 
-  const fetchRoute = async (dest: { latitude: number; longitude: number }) => {
+  const fetchRoute = async (
+    dest: { latitude: number; longitude: number },
+    wps?: { latitude: number; longitude: number }[],
+  ) => {
     if (!location || !token) return;
     setRouteLoading(true);
     setRouteMode('preview');
+    const waypointsToUse = wps ?? userWaypoints;
     try {
       const data = await mapService.getRoute(
         location.latitude, location.longitude,
         dest.latitude, dest.longitude,
         token,
+        waypointsToUse,
       );
       setRoute(data);
       setRemainingKm(data.distance_km);
       setRemainingMin(data.duration_min);
       setCurrentStepIdx(0);
 
-      // Rotayı haritada göster
-      if (routeCoords.length > 0) {
-        mapRef.current?.fitToCoordinates(
-          [location, dest],
-          { edgePadding: { top: 120, right: 40, bottom: 240, left: 40 }, animated: true },
-        );
-      }
+      // Tüm rotayı gösterecek şekilde haritayı büyüt
+      const allCoords = data.geometry.map(([lon, lat]) => ({ latitude: lat, longitude: lon }));
+      mapRef.current?.fitToCoordinates(
+        allCoords.length > 0 ? allCoords : [location, dest],
+        { edgePadding: { top: 140, right: 50, bottom: 280, left: 50 }, animated: true },
+      );
     } catch {
       Alert.alert('Rota Hatası', 'Rota hesaplanamadı. OSRM servisi erişilemez olabilir.');
       setRouteMode('selecting');
@@ -251,6 +362,18 @@ export default function MapScreen() {
     if (!route || !location) return;
     setRouteMode('navigating');
     setNavLocation(location);
+
+    // Konuma odaklan
+    mapRef.current?.animateCamera(
+      {
+        center: location,
+        heading: 0,
+        pitch: 45,
+        zoom: Platform.OS === 'android' ? 18 : undefined,
+        altitude: Platform.OS === 'ios' ? 300 : undefined,
+      } as any,
+      { duration: 800 },
+    );
 
     // Yüksek hassasiyetli konum takibi
     const sub = await Location.watchPositionAsync(
@@ -306,6 +429,8 @@ export default function MapScreen() {
     setDestination(null);
     setNavLocation(null);
     setCurrentStepIdx(0);
+    setUserWaypoints([]);
+    setIsAddingWaypoint(false);
     setActiveFilter('hasar');
     clearSearch();
 
@@ -367,8 +492,8 @@ export default function MapScreen() {
         showsMyLocationButton={false}
         showsCompass={isNavigating}
         toolbarEnabled={false}
-        onRegionChangeComplete={setVisibleRegion}
-        onPress={isSelecting ? handleMapPress : undefined}
+        onRegionChangeComplete={(region) => setVisibleRegion(region)}
+        onPress={(isSelecting || isAddingWaypoint) ? handleMapPress : undefined}
       >
         {/* Deprem marker'ları */}
         {activeFilter === 'hasar' && visibleEarthquakes.map((eq) => (
@@ -388,38 +513,44 @@ export default function MapScreen() {
           </Marker>
         ))}
 
-        {/* AI hasar grid */}
-        {activeFilter === 'hasar' && damageGrid.map((cell) => (
+        {/* AI hasar grid — hasar filtresi veya güvenli rota modunda göster */}
+        {(activeFilter === 'hasar' || activeFilter === 'guvenlirota' || isPreview || isNavigating) && damageGrid.map((cell) => (
           <Circle
             key={cell.grid_cell_id}
             center={{ latitude: cell.latitude, longitude: cell.longitude }}
-            radius={300}
+            radius={40}
             fillColor={damageGridColor(cell.aggregated_score)}
-            strokeColor={cell.is_confirmed ? 'rgba(239,68,68,0.9)' : 'rgba(255,255,255,0.2)'}
-            strokeWidth={cell.is_confirmed ? 2 : 1}
+            strokeColor={damageGridStroke(cell.aggregated_score)}
+            strokeWidth={2.5}
           />
         ))}
 
-        {/* Toplanma alanları — filtreden bağımsız, rota modunda da göster */}
+        {/* Yerel hasar raporu daireleri — AI işleyene kadar geçici gösterim */}
+        {(activeFilter === 'hasar' || activeFilter === 'guvenlirota' || isPreview || isNavigating) && localDamageReports
+          .filter(r => !damageGrid.some(
+            cell => Math.abs(cell.latitude - r.coordinates.latitude) < 0.001 &&
+                    Math.abs(cell.longitude - r.coordinates.longitude) < 0.001
+          ))
+          .map((report) => (
+            <Circle
+              key={`local-${report.id}`}
+              center={{ latitude: report.coordinates.latitude, longitude: report.coordinates.longitude }}
+              radius={40}
+              fillColor="rgba(249,115,22,0.72)"
+              strokeColor="#f97316"
+              strokeWidth={2.5}
+            />
+          ))}
+
+        {/* Toplanma alanları */}
         {(activeFilter === 'toplanma' || isPreview || isNavigating || isSelecting) && visibleSafeAreas.map((area) => (
           <Marker
             key={area.osm_id}
             coordinate={{ latitude: area.latitude, longitude: area.longitude }}
+            pinColor="#22c55e"
             tracksViewChanges={false}
-          >
-            <View style={styles.safeAreaMarker}>
-              <Ionicons name="shield-checkmark" size={14} color="#fff" />
-            </View>
-            <Callout tooltip>
-              <View style={styles.calloutBox}>
-                <Text style={styles.calloutTitle}>{area.name ?? 'Toplanma Alanı'}</Text>
-                {area.capacity ? (
-                  <Text style={styles.calloutSub}>Kapasite: {area.capacity} kişi</Text>
-                ) : null}
-                <Text style={styles.calloutTag}>🛡️ Güvenli Toplanma Noktası</Text>
-              </View>
-            </Callout>
-          </Marker>
+            onPress={() => setSelectedSafeArea(area)}
+          />
         ))}
 
         {/* Kullanıcı konumu */}
@@ -452,6 +583,58 @@ export default function MapScreen() {
           </Marker>
         )}
 
+        {/* Kullanıcı ara durak marker'ları */}
+        {userWaypoints.map((wp, idx) => (
+          <Marker
+            key={`wp-${idx}`}
+            coordinate={wp}
+            anchor={{ x: 0.5, y: 0.5 }}
+            onPress={() => {
+              const updated = userWaypoints.filter((_, i) => i !== idx);
+              setUserWaypoints(updated);
+              if (destination) fetchRoute(destination, updated);
+            }}
+          >
+            <View collapsable={false} style={styles.waypointMarker}>
+              <Text style={styles.waypointMarkerText}>{idx + 1}</Text>
+            </View>
+          </Marker>
+        ))}
+
+        {/* Alternatif rotalar */}
+        {(isPreview || isNavigating) && route?.alternatives?.map((alt, idx) => {
+          const altCoords = alt.geometry.map(([lon, lat]) => ({ latitude: lat, longitude: lon }));
+          const altRatio = alt.geometry.length > 0 ? alt.damage_score / alt.geometry.length : 0;
+          const isDamaged = altRatio > 0.08; // rotanın %8'inden fazlası hasar bölgesine yakınsa riskli
+          return (
+            <Polyline
+              key={`alt-${idx}`}
+              coordinates={altCoords}
+              strokeColor={isDamaged ? 'rgba(239,68,68,0.6)' : 'rgba(167,139,250,0.5)'}
+              strokeWidth={3}
+              tappable
+              onPress={() => {
+                const newRoute: RouteData = {
+                  ...alt,
+                  steps: route.steps,
+                  alternatives: [
+                    {
+                      distance_km: route.distance_km,
+                      duration_min: route.duration_min,
+                      geometry: route.geometry,
+                      damage_score: route.damage_score,
+                    },
+                    ...route.alternatives!.filter((_, i) => i !== idx),
+                  ],
+                };
+                setRoute(newRoute);
+                setRemainingKm(alt.distance_km);
+                setRemainingMin(alt.duration_min);
+              }}
+            />
+          );
+        })}
+
         {/* Rota çizgisi */}
         {routeCoords.length > 0 && (isPreview || isNavigating) && (
           <>
@@ -462,11 +645,16 @@ export default function MapScreen() {
               strokeWidth={8}
             />
             {/* Ana rota */}
-            <Polyline
-              coordinates={routeCoords}
-              strokeColor={route && route.damage_score > 0 ? '#f97316' : '#a78bfa'}
-              strokeWidth={5}
-            />
+            {(() => {
+              const mainDamaged = routeDamageCheck.isRisky;
+              return (
+                <Polyline
+                  coordinates={routeCoords}
+                  strokeColor={mainDamaged ? '#ef4444' : '#a78bfa'}
+                  strokeWidth={5}
+                />
+              );
+            })()}
           </>
         )}
       </MapView>
@@ -474,6 +662,28 @@ export default function MapScreen() {
       {loading && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      )}
+
+      {/* ── Toplanma alanı bilgi kartı ── */}
+      {selectedSafeArea && (
+        <View style={styles.safeAreaCard}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <View style={{ backgroundColor: Colors.success, borderRadius: 20, padding: 6 }}>
+              <Ionicons name="shield-checkmark" size={18} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.safeAreaCardTitle}>{selectedSafeArea.name ?? 'Toplanma Alanı'}</Text>
+              {selectedSafeArea.capacity ? (
+                <Text style={styles.safeAreaCardSub}>Kapasite: {selectedSafeArea.capacity} kişi</Text>
+              ) : (
+                <Text style={styles.safeAreaCardSub}>Güvenli Toplanma Noktası</Text>
+              )}
+            </View>
+            <TouchableOpacity onPress={() => setSelectedSafeArea(null)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="close" size={20} color="rgba(255,255,255,0.6)" />
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -640,35 +850,67 @@ export default function MapScreen() {
 
       {/* ── Alt sheet: normal mod ── */}
       {!isNavigating && !isSelecting && (
-        <View style={[styles.bottomSheet, { paddingBottom: insets.bottom + 8 }]}>
+        <View style={[styles.bottomSheet, { paddingBottom: insets.bottom + 20 }]}>
           {isPreview && route ? (
             /* Rota önizleme */
             <>
+              {/* İstatistik + uyarı + butonlar tek kompakt blok */}
               <View style={styles.routeInfoRow}>
                 <View style={styles.routeInfoItem}>
-                  <Ionicons name="navigate" size={16} color="#a78bfa" />
                   <Text style={styles.routeInfoValue}>{route.distance_km.toFixed(1)} km</Text>
                   <Text style={styles.routeInfoLabel}>Mesafe</Text>
                 </View>
                 <View style={styles.routeInfoDivider} />
                 <View style={styles.routeInfoItem}>
-                  <Ionicons name="time-outline" size={16} color="#a78bfa" />
                   <Text style={styles.routeInfoValue}>{formatDuration(route.duration_min)}</Text>
                   <Text style={styles.routeInfoLabel}>Süre</Text>
                 </View>
                 <View style={styles.routeInfoDivider} />
                 <View style={styles.routeInfoItem}>
-                  <Ionicons name="shield-outline" size={16} color={route.damage_score > 0 ? '#f97316' : Colors.success} />
-                  <Text style={[styles.routeInfoValue, { color: route.damage_score > 0 ? '#f97316' : Colors.success }]}>
-                    {route.damage_score > 0 ? 'Riskli' : 'Güvenli'}
+                  <Ionicons name="shield-outline" size={14} color={routeDamageCheck.isRisky ? '#f97316' : Colors.success} />
+                  <Text style={[styles.routeInfoValue, { color: routeDamageCheck.isRisky ? '#f97316' : Colors.success }]}>
+                    {routeDamageCheck.isRisky ? 'Riskli' : 'Güvenli'}
                   </Text>
                   <Text style={styles.routeInfoLabel}>Güzergah</Text>
                 </View>
               </View>
+              {/* Riskli uyarı — count > 0 olduğunda göster */}
+              {routeDamageCheck.isRisky && routeDamageCheck.count > 0 && (
+                <View style={styles.riskyRouteBanner}>
+                  <Ionicons name="warning" size={13} color="#f97316" />
+                  <Text style={styles.riskyRouteBannerText}>
+                    {routeDamageCheck.count} hasarlı bölgeden geçiyor.
+                  </Text>
+                </View>
+              )}
+              {/* Durak bilgi satırı — sadece durak varsa */}
+              {userWaypoints.length > 0 && (
+                <View style={styles.waypointInfoRow}>
+                  <Ionicons name="location" size={13} color="#f59e0b" />
+                  <Text style={styles.waypointInfoText}>
+                    {userWaypoints.length} durak eklendi
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => { setUserWaypoints([]); if (destination) fetchRoute(destination, []); }}
+                  >
+                    <Text style={styles.waypointClearText}>Temizle</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {/* Ana buton satırı: Durak | Değiştir | Başla */}
               <View style={styles.previewBtnRow}>
                 <TouchableOpacity
+                  style={[styles.addWaypointBtn, isAddingWaypoint && styles.addWaypointBtnActive]}
+                  onPress={() => setIsAddingWaypoint(v => !v)}
+                >
+                  <Ionicons name="add-circle-outline" size={15} color={isAddingWaypoint ? '#a78bfa' : Colors.textSecondary} />
+                  <Text style={[styles.addWaypointBtnText, isAddingWaypoint && { color: '#a78bfa' }]}>
+                    {isAddingWaypoint ? 'Dokun' : 'Durak'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={styles.cancelRouteBtn}
-                  onPress={() => { setRouteMode('selecting'); setRoute(null); setDestination(null); clearSearch(); }}
+                  onPress={() => { setRouteMode('selecting'); setRoute(null); setDestination(null); setUserWaypoints([]); clearSearch(); }}
                 >
                   <Text style={styles.cancelRouteBtnText}>Değiştir</Text>
                 </TouchableOpacity>
@@ -806,6 +1048,17 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 10, fontWeight: '700', color: '#fff' },
 
   // Marker'lar
+  damageCircleMarker: {
+    width: 44, height: 44, borderRadius: 22,
+    borderWidth: 2.5,
+  },
+  localDamageCircleMarker: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: 'rgba(249,115,22,0.45)',
+    borderWidth: 2.5, borderColor: '#f97316',
+  },
+  damageDot: { width: 8, height: 8, borderRadius: 4 },
+
   earthquakeMarker: {
     backgroundColor: Colors.error,
     alignItems: 'center', justifyContent: 'center',
@@ -852,6 +1105,20 @@ const styles = StyleSheet.create({
   calloutSub:   { fontSize: 11, color: 'rgba(255,255,255,0.6)' },
   calloutTag:   { fontSize: 11, color: '#4ade80', marginTop: 2 },
 
+  safeAreaCard: {
+    position: 'absolute',
+    bottom: 110,
+    left: 16,
+    right: 16,
+    backgroundColor: '#0e1f35',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(34,197,94,0.35)',
+  },
+  safeAreaCardTitle: { fontSize: 14, fontWeight: '700', color: '#fff', flex: 1 },
+  safeAreaCardSub:   { fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 },
+
   // Navigasyon — üst adım kartı
   navStepCard: {
     position: 'absolute', top: 0, left: 0, right: 0,
@@ -885,11 +1152,11 @@ const styles = StyleSheet.create({
 
   // Alt sheet — normal
   bottomSheet: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: 'rgba(10,22,40,0.95)',
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    position: 'absolute', bottom: -4, left: 0, right: 0,
+    backgroundColor: 'rgba(10,22,40,0.97)',
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
     borderTopWidth: 1, borderColor: Colors.border,
-    padding: Spacing.lg, gap: Spacing.md,
+    paddingHorizontal: Spacing.md, paddingTop: Spacing.md, gap: Spacing.sm,
   },
   statsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
   statItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -910,17 +1177,44 @@ const styles = StyleSheet.create({
   routeLoadingText: { fontSize: FontSize.sm, color: Colors.textSecondary },
 
   // Rota önizleme
-  routeInfoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around' },
-  routeInfoItem: { alignItems: 'center', gap: 3 },
+  routeInfoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingVertical: 2 },
+  routeInfoItem: { alignItems: 'center', gap: 2 },
   routeInfoValue: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text },
   routeInfoLabel: { fontSize: FontSize.xs, color: Colors.textMuted },
-  routeInfoDivider: { width: 1, height: 36, backgroundColor: Colors.border },
-  previewBtnRow: { flexDirection: 'row', gap: Spacing.sm },
+  routeInfoDivider: { width: 1, height: 28, backgroundColor: Colors.border },
+  riskyRouteBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(249,115,22,0.10)',
+    borderWidth: 1, borderColor: 'rgba(249,115,22,0.25)',
+    borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5,
+  },
+  riskyRouteBannerText: { fontSize: 11, color: '#f97316', flex: 1 },
+  waypointRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  waypointBtnGroup: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,
+  },
+  waypointInfoRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 6, paddingHorizontal: 4,
+  },
+  waypointInfoText: { flex: 1, fontSize: FontSize.xs, color: '#f59e0b', fontWeight: '500' },
+  waypointClearText: { fontSize: FontSize.xs, color: Colors.textSecondary, fontWeight: '600' },
+  addWaypointBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingVertical: 13, paddingHorizontal: 12,
+    borderRadius: BorderRadius.xl, borderWidth: 1, borderColor: Colors.border,
+  },
+  addWaypointBtnActive: { borderColor: '#a78bfa', backgroundColor: 'rgba(167,139,250,0.1)' },
+  addWaypointBtnText: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textSecondary },
+  clearWaypointsBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' },
+  clearWaypointsBtnText: { fontSize: 12, color: Colors.error },
+  waypointMarker: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#f59e0b', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },
+  waypointMarkerText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  previewBtnRow: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
   cancelRouteBtn: {
     flex: 1, paddingVertical: 13,
     borderRadius: BorderRadius.xl, borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: 'center',
+    borderColor: Colors.border, alignItems: 'center',
   },
   cancelRouteBtnText: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textSecondary },
   startNavBtn: {

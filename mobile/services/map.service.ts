@@ -27,12 +27,20 @@ export interface RouteStep {
   maneuver: string;
 }
 
+export interface AlternativeRoute {
+  distance_km: number;
+  duration_min: number;
+  geometry: [number, number][];
+  damage_score: number;
+}
+
 export interface RouteData {
   distance_km: number;
   duration_min: number;
   geometry: [number, number][]; // [[lon, lat], ...]
   damage_score: number;
   steps: RouteStep[];
+  alternatives?: AlternativeRoute[];
 }
 
 interface MapResponse<T> {
@@ -52,16 +60,34 @@ export const mapService = {
     return res.data ?? [];
   },
 
+  nearestRoad: async (
+    lat: number,
+    lon: number,
+    token: string,
+  ): Promise<{ latitude: number; longitude: number } | null> => {
+    try {
+      const res = await apiClient.get<{ latitude: number; longitude: number; distance_m: number }>(
+        `/map/nearest?lat=${lat}&lon=${lon}`,
+        token,
+      );
+      return { latitude: res.latitude, longitude: res.longitude };
+    } catch {
+      return null;
+    }
+  },
+
   getRoute: async (
     fromLat: number,
     fromLon: number,
     toLat: number,
     toLon: number,
     token: string,
+    waypoints?: { latitude: number; longitude: number }[],
   ): Promise<RouteData> => {
-    return apiClient.get<RouteData>(
-      `/map/route?from_lat=${fromLat}&from_lon=${fromLon}&to_lat=${toLat}&to_lon=${toLon}`,
-      token,
-    );
+    let url = `/map/route?from_lat=${fromLat}&from_lon=${fromLon}&to_lat=${toLat}&to_lon=${toLon}`;
+    if (waypoints && waypoints.length > 0) {
+      url += waypoints.map(wp => `&via=${wp.latitude},${wp.longitude}`).join('');
+    }
+    return apiClient.get<RouteData>(url, token);
   },
 };
