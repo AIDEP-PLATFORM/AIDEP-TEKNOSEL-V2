@@ -45,7 +45,7 @@ export default function StkRegisterScreen() {
 
   // STK isimlerini yükle
   useEffect(() => {
-    organizationService.getNames('STK').then(setOrgNames).catch(() => {});
+    organizationService.getNames('STK').then(setOrgNames).catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -53,7 +53,7 @@ export default function StkRegisterScreen() {
       setSelectedCity('');
       setSelectedBranch(null);
       setOrgBranches([]);
-      organizationService.getCities(selectedOrgName, 'STK').then(setOrgCities).catch(() => {});
+      organizationService.getCities(selectedOrgName, 'STK').then(setOrgCities).catch(() => { });
     } else {
       setOrgCities([]);
       setOrgBranches([]);
@@ -65,7 +65,7 @@ export default function StkRegisterScreen() {
   useEffect(() => {
     if (selectedOrgName && selectedCity) {
       setSelectedBranch(null);
-      organizationService.getBranches(selectedOrgName, selectedCity, 'STK').then(setOrgBranches).catch(() => {});
+      organizationService.getBranches(selectedOrgName, selectedCity, 'STK').then(setOrgBranches).catch(() => { });
     } else {
       setOrgBranches([]);
       setSelectedBranch(null);

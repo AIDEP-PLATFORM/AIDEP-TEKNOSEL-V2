@@ -31,6 +31,26 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   return response.json();
 }
 
+async function requestFormData<T>(endpoint: string, formData: FormData, token?: string): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Bilinmeyen hata' }));
+    throw new Error(error.detail || `HTTP ${response.status}`);
+  }
+
+  return response.json();
+}
+
 export const apiClient = {
   get: <T>(endpoint: string, token?: string) =>
     request<T>(endpoint, { token }),
@@ -40,4 +60,6 @@ export const apiClient = {
     request<T>(endpoint, { method: 'PUT', body, token }),
   delete: <T>(endpoint: string, token?: string) =>
     request<T>(endpoint, { method: 'DELETE', token }),
+  postFormData: <T>(endpoint: string, formData: FormData, token?: string) =>
+    requestFormData<T>(endpoint, formData, token),
 };

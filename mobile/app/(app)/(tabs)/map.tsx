@@ -11,6 +11,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, BorderRadius } from '@/constants/theme';
 import { mapService, EarthquakePoint, SafeAreaPoint } from '@/services/map.service';
+import { aiService } from '@/services/ai.service';
+import { useAuthStore } from '@/store/auth.store';
+import { DamageMapCell } from '@/types/ai.types';
 
 const FILTERS = [
   { key: 'hasar', label: 'Hasar', icon: 'warning-outline', color: Colors.error },
@@ -26,15 +29,24 @@ const TURKEY_REGION = {
   longitudeDelta: 0.05,
 };
 
+function damageGridColor(score: number): string {
+  if (score >= 0.75) return 'rgba(239,68,68,0.55)';
+  if (score >= 0.5) return 'rgba(249,115,22,0.5)';
+  if (score >= 0.25) return 'rgba(234,179,8,0.45)';
+  return 'rgba(34,197,94,0.4)';
+}
+
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
+  const token = useAuthStore((s) => s.tokens?.accessToken);
   const [activeFilter, setActiveFilter] = useState('hasar');
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationError, setLocationError] = useState(false);
   const [loading, setLoading] = useState(true);
   const [earthquakes, setEarthquakes] = useState<EarthquakePoint[]>([]);
   const [safeAreas, setSafeAreas] = useState<SafeAreaPoint[]>([]);
+  const [damageGrid, setDamageGrid] = useState<DamageMapCell[]>([]);
   const [visibleRegion, setVisibleRegion] = useState(TURKEY_REGION);
 
   useEffect(() => {
@@ -66,6 +78,11 @@ export default function MapScreen() {
     mapService.getEarthquakes().then(setEarthquakes).catch(() => {});
     mapService.getSafeAreas().then(setSafeAreas).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    aiService.getDamageMap(token).then(setDamageGrid).catch(() => {});
+  }, [token]);
 
   const isZoomedIn = visibleRegion.latitudeDelta < 0.5;
 
@@ -136,6 +153,18 @@ export default function MapScreen() {
           </Marker>
         ))}
 
+        {/* AI hasar grid hücreleri */}
+        {activeFilter === 'hasar' && damageGrid.map((cell) => (
+          <Circle
+            key={cell.grid_cell_id}
+            center={{ latitude: cell.latitude, longitude: cell.longitude }}
+            radius={300}
+            fillColor={damageGridColor(cell.aggregated_score)}
+            strokeColor={cell.is_confirmed ? 'rgba(239,68,68,0.9)' : 'rgba(255,255,255,0.2)'}
+            strokeWidth={cell.is_confirmed ? 2 : 1}
+          />
+        ))}
+
         {/* Toplanma alanı marker'ları */}
         {activeFilter === 'toplanma' && visibleSafeAreas.map((area) => (
           <Marker
@@ -191,7 +220,7 @@ export default function MapScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Deprem Haritası</Text>
-            <Text style={styles.headerSub}>{earthquakes.length} deprem · {safeAreas.length} toplanma alanı</Text>
+            <Text style={styles.headerSub}>{earthquakes.length} deprem · {safeAreas.length} toplanma · {damageGrid.length} hasar bölgesi</Text>
           </View>
           <TouchableOpacity style={styles.locBtn} onPress={goToMyLocation}>
             <Ionicons name="navigate" size={18} color={Colors.primary} />
@@ -257,9 +286,9 @@ export default function MapScreen() {
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <View style={[styles.statDot, { backgroundColor: Colors.success }]} />
-            <Text style={[styles.statNum, { color: Colors.success }]}>Aktif</Text>
-            <Text style={styles.statLabel}>Konum</Text>
+            <View style={[styles.statDot, { backgroundColor: '#f97316' }]} />
+            <Text style={styles.statNum}>{damageGrid.length}</Text>
+            <Text style={styles.statLabel}>Hasar Bölgesi</Text>
           </View>
         </View>
 

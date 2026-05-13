@@ -39,7 +39,7 @@ export default function CitizenRegisterScreen() {
 
   // STK isimlerini yükle
   useEffect(() => {
-    organizationService.getNames('STK').then(setOrgNames).catch(() => {});
+    organizationService.getNames('STK').then(setOrgNames).catch(() => { });
   }, []);
 
   // Org seçilince şehirleri yükle
@@ -48,7 +48,7 @@ export default function CitizenRegisterScreen() {
       setSelectedCity('');
       setSelectedBranch(null);
       setOrgBranches([]);
-      organizationService.getCities(selectedOrgName, 'STK').then(setOrgCities).catch(() => {});
+      organizationService.getCities(selectedOrgName, 'STK').then(setOrgCities).catch(() => { });
     } else {
       setOrgCities([]);
       setOrgBranches([]);
@@ -61,7 +61,7 @@ export default function CitizenRegisterScreen() {
   useEffect(() => {
     if (selectedOrgName && selectedCity) {
       setSelectedBranch(null);
-      organizationService.getBranches(selectedOrgName, selectedCity, 'STK').then(setOrgBranches).catch(() => {});
+      organizationService.getBranches(selectedOrgName, selectedCity, 'STK').then(setOrgBranches).catch(() => { });
     } else {
       setOrgBranches([]);
       setSelectedBranch(null);

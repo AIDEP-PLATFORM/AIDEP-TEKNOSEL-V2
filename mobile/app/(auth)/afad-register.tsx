@@ -38,7 +38,7 @@ export default function AfadRegisterScreen() {
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
-    organizationService.getNames('OFFICIAL').then(setOrgNames).catch(() => {});
+    organizationService.getNames('OFFICIAL').then(setOrgNames).catch(() => { });
   }, []);
 
   useEffect(() => {
@@ -46,7 +46,7 @@ export default function AfadRegisterScreen() {
       setSelectedCity('');
       setSelectedBranch(null);
       setOrgBranches([]);
-      organizationService.getCities(selectedOrgName, 'OFFICIAL').then(setOrgCities).catch(() => {});
+      organizationService.getCities(selectedOrgName, 'OFFICIAL').then(setOrgCities).catch(() => { });
     } else {
       setOrgCities([]);
       setOrgBranches([]);
@@ -58,7 +58,7 @@ export default function AfadRegisterScreen() {
   useEffect(() => {
     if (selectedOrgName && selectedCity) {
       setSelectedBranch(null);
-      organizationService.getBranches(selectedOrgName, selectedCity, 'OFFICIAL').then(setOrgBranches).catch(() => {});
+      organizationService.getBranches(selectedOrgName, selectedCity, 'OFFICIAL').then(setOrgBranches).catch(() => { });
     } else {
       setOrgBranches([]);
       setSelectedBranch(null);
