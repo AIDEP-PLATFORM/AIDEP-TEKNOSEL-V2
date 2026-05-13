@@ -5,19 +5,19 @@ pytestmark = pytest.mark.asyncio
 
 # ─── Yardımcılar ───────────────────────────────────────────────
 
-async def _create_stk_org(client, name="AKUT", city="Konya", district="Selçuklu"):
+async def _create_stk_org(client, headers, name="AKUT", city="Konya", district="Selçuklu"):
     res = await client.post("/organizations", json={
         "name": name, "city": city, "district": district, "org_type": "STK",
-    })
-    assert res.status_code == 201
+    }, headers=headers)
+    assert res.status_code == 201, res.json()
     return res.json()
 
 
-async def _create_official_org(client, name="AFAD", city="Konya", district="Selçuklu"):
+async def _create_official_org(client, headers, name="AFAD", city="Konya", district="Selçuklu"):
     res = await client.post("/organizations", json={
         "name": name, "city": city, "district": district, "org_type": "OFFICIAL",
-    })
-    assert res.status_code == 201
+    }, headers=headers)
+    assert res.status_code == 201, res.json()
     return res.json()
 
 
@@ -96,8 +96,8 @@ async def test_register_passwords_mismatch(client: AsyncClient):
 
 # ─── Gönüllü Kaydı ─────────────────────────────────────────────
 
-async def test_register_volunteer_success(client: AsyncClient):
-    org = await _create_stk_org(client)
+async def test_register_volunteer_success(client: AsyncClient, admin_headers):
+    org = await _create_stk_org(client, admin_headers)
     res = await client.post("/auth/register", json={
         **CITIZEN_BASE, "email": "gonullu@aideptest.com",
         "phone": "+905550000030", "organization_id": org["id"],
@@ -106,8 +106,8 @@ async def test_register_volunteer_success(client: AsyncClient):
     assert res.json()["user"]["role"] == "VOLUNTEER"
 
 
-async def test_register_volunteer_skills_empty_on_register(client: AsyncClient):
-    org = await _create_stk_org(client)
+async def test_register_volunteer_skills_empty_on_register(client: AsyncClient, admin_headers):
+    org = await _create_stk_org(client, admin_headers)
     reg = await client.post("/auth/register", json={
         **CITIZEN_BASE, "email": "gonullu2@aideptest.com",
         "phone": "+905550000031", "organization_id": org["id"],
@@ -122,8 +122,8 @@ async def test_register_volunteer_skills_empty_on_register(client: AsyncClient):
 
 # ─── NGO Yönetici Kaydı ────────────────────────────────────────
 
-async def test_register_ngo_manager_success(client: AsyncClient):
-    org = await _create_stk_org(client)
+async def test_register_ngo_manager_success(client: AsyncClient, admin_headers):
+    org = await _create_stk_org(client, admin_headers)
     res = await client.post("/auth/register/ngo-manager", json={
         **NGO_MANAGER_BASE, "organization_id": org["id"],
     })
@@ -132,8 +132,8 @@ async def test_register_ngo_manager_success(client: AsyncClient):
     assert res.json()["is_active"] is False
 
 
-async def test_register_ngo_staff_success(client: AsyncClient):
-    org = await _create_stk_org(client)
+async def test_register_ngo_staff_success(client: AsyncClient, admin_headers):
+    org = await _create_stk_org(client, admin_headers)
     res = await client.post("/auth/register/ngo-staff", json={
         **NGO_STAFF_BASE, "organization_id": org["id"],
     })
@@ -144,13 +144,13 @@ async def test_register_ngo_staff_success(client: AsyncClient):
 
 # ─── Resmi Kurum Kaydı ─────────────────────────────────────────
 
-async def test_register_official_manager_success(client: AsyncClient):
+async def test_register_official_manager_success(client: AsyncClient, admin_headers):
     """Sicil no başı '1' → OFFICIAL_MANAGER."""
-    org = await _create_official_org(client)
+    org = await _create_official_org(client, admin_headers)
     res = await client.post("/auth/register/official", json={
         **OFFICIAL_BASE,
         "organization_id": org["id"],
-        "registration_number": "1234567890",  # başı '1' → yetkili
+        "registration_number": "1234567890",
     })
     assert res.status_code == 201
     data = res.json()
@@ -159,34 +159,34 @@ async def test_register_official_manager_success(client: AsyncClient):
     assert "access_token" in data
 
 
-async def test_register_official_staff_success(client: AsyncClient):
+async def test_register_official_staff_success(client: AsyncClient, admin_headers):
     """Sicil no başı '1' değil → OFFICIAL_STAFF."""
-    org = await _create_official_org(client)
+    org = await _create_official_org(client, admin_headers)
     res = await client.post("/auth/register/official", json={
         **OFFICIAL_BASE,
         "email": "personel@aideptest.com",
         "phone": "+905550000051",
         "organization_id": org["id"],
-        "registration_number": "2345678901",  # başı '2' → personel
+        "registration_number": "2345678901",
     })
     assert res.status_code == 201
     assert res.json()["user"]["role"] == "OFFICIAL_STAFF"
     assert res.json()["user"]["is_active"] is True
 
 
-async def test_register_official_invalid_reg_number(client: AsyncClient):
+async def test_register_official_invalid_reg_number(client: AsyncClient, admin_headers):
     """10 haneli sayı değilse 422."""
-    org = await _create_official_org(client)
+    org = await _create_official_org(client, admin_headers)
     res = await client.post("/auth/register/official", json={
         **OFFICIAL_BASE, "organization_id": org["id"],
-        "registration_number": "12345",  # çok kısa
+        "registration_number": "12345",
     })
     assert res.status_code == 422
 
 
-async def test_register_official_duplicate_reg_number(client: AsyncClient):
+async def test_register_official_duplicate_reg_number(client: AsyncClient, admin_headers):
     """Aynı sicil numarası iki kez kayıt edilemez."""
-    org = await _create_official_org(client)
+    org = await _create_official_org(client, admin_headers)
     payload = {**OFFICIAL_BASE, "organization_id": org["id"],
                 "registration_number": "1234567890"}
     await client.post("/auth/register/official", json=payload)
@@ -199,9 +199,9 @@ async def test_register_official_duplicate_reg_number(client: AsyncClient):
 
 # ─── Web Giriş Kısıtlaması ─────────────────────────────────────
 
-async def test_web_login_official_manager_allowed(client: AsyncClient):
+async def test_web_login_official_manager_allowed(client: AsyncClient, admin_headers):
     """OFFICIAL_MANAGER web'den giriş yapabilir."""
-    org = await _create_official_org(client)
+    org = await _create_official_org(client, admin_headers)
     await client.post("/auth/register/official", json={
         **OFFICIAL_BASE, "organization_id": org["id"],
         "registration_number": "1234567890",
@@ -214,9 +214,9 @@ async def test_web_login_official_manager_allowed(client: AsyncClient):
     assert res.status_code == 200
 
 
-async def test_web_login_official_staff_blocked(client: AsyncClient):
+async def test_web_login_official_staff_blocked(client: AsyncClient, admin_headers):
     """OFFICIAL_STAFF web'den giriş yapamaz → 403."""
-    org = await _create_official_org(client)
+    org = await _create_official_org(client, admin_headers)
     await client.post("/auth/register/official", json={
         **OFFICIAL_BASE,
         "email": "personel@aideptest.com",
@@ -244,26 +244,23 @@ async def test_web_login_citizen_blocked(client: AsyncClient):
     assert res.status_code == 403
 
 
-async def test_web_login_ngo_staff_blocked(client: AsyncClient):
-    """NGO_STAFF web'den giriş yapamaz → 403."""
-    org = await _create_stk_org(client)
+async def test_web_login_ngo_staff_blocked(client: AsyncClient, admin_headers):
+    """NGO_STAFF web'den giriş yapamaz → 403 (onay beklediği için de 403)."""
+    org = await _create_stk_org(client, admin_headers)
     await client.post("/auth/register/ngo-staff", json={
         **NGO_STAFF_BASE, "organization_id": org["id"],
     })
-    # Önce aktif et (normalde yönetici onaylar, test için direkt DB'ye bakıyoruz)
-    # NGO_STAFF is_active=False olduğu için önce pending approval hatası alırız
     res = await client.post("/auth/login", json={
         "email": "saha@aideptest.com",
         "password": "test123",
         "platform": "web",
     })
-    # is_active=False olduğu için "onay bekliyor" gelir (403)
     assert res.status_code == 403
 
 
-async def test_mobile_login_official_staff_allowed(client: AsyncClient):
+async def test_mobile_login_official_staff_allowed(client: AsyncClient, admin_headers):
     """OFFICIAL_STAFF mobil'den giriş yapabilir."""
-    org = await _create_official_org(client)
+    org = await _create_official_org(client, admin_headers)
     await client.post("/auth/register/official", json={
         **OFFICIAL_BASE,
         "email": "personel@aideptest.com",
@@ -281,8 +278,8 @@ async def test_mobile_login_official_staff_allowed(client: AsyncClient):
 
 # ─── Onay Bekleme ──────────────────────────────────────────────
 
-async def test_login_pending_approval(client: AsyncClient):
-    org = await _create_stk_org(client)
+async def test_login_pending_approval(client: AsyncClient, admin_headers):
+    org = await _create_stk_org(client, admin_headers)
     await client.post("/auth/register/ngo-manager", json={
         **NGO_MANAGER_BASE, "organization_id": org["id"],
     })
@@ -295,8 +292,8 @@ async def test_login_pending_approval(client: AsyncClient):
 
 # ─── Beceri Güncelleme ─────────────────────────────────────────
 
-async def test_update_skills_success(client: AsyncClient):
-    org = await _create_stk_org(client)
+async def test_update_skills_success(client: AsyncClient, admin_headers):
+    org = await _create_stk_org(client, admin_headers)
     reg = await client.post("/auth/register", json={
         **CITIZEN_BASE, "email": "skilltest@aideptest.com",
         "phone": "+905550000040", "organization_id": org["id"],
@@ -350,9 +347,9 @@ async def test_me_no_token(client: AsyncClient):
     assert res.status_code == 403
 
 
-async def test_me_official_profile(client: AsyncClient):
+async def test_me_official_profile(client: AsyncClient, admin_headers):
     """OFFICIAL_MANAGER /me'de official_profile döner."""
-    org = await _create_official_org(client)
+    org = await _create_official_org(client, admin_headers)
     reg = await client.post("/auth/register/official", json={
         **OFFICIAL_BASE, "organization_id": org["id"],
         "registration_number": "1234567890",

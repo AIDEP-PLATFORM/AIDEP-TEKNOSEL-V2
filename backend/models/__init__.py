@@ -9,6 +9,7 @@ from models.user import (
     UserRole,
 )
 from models.team import Team, TeamMember
+from models.photo import DamagePhoto
 from models.request import (
     HelpRequest,
     Assignment,
@@ -28,6 +29,7 @@ __all__ = [
     "UserRole",
     "Team",
     "TeamMember",
+    "DamagePhoto",
     "HelpRequest",
     "Assignment",
     "NeedType",

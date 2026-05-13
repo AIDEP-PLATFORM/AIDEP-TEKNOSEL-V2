@@ -2,27 +2,35 @@ import logging
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
 from core.dependencies import get_current_user
 from models.request import AssignmentStatus, NeedType, RequestStatus
 from models.user import User, UserRole
+from schemas.photo import DamagePhotoResponse
 from schemas.request import (
     AssignmentStatusUpdate,
     HelpRequestCreate,
     HelpRequestResponse,
     MatchingRunResponse,
 )
-from services import matching_service, request_service
+from services import matching_service, request_service, photo_service
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/requests", tags=["Help Requests"])
 
 
-# ─── Yetki yardımcıları ─────────────────────────────────────────
+# ─── Yardımcılar ────────────────────────────────────────────────
+
+def _to_response(req) -> HelpRequestResponse:
+    """HelpRequest ORM nesnesini response şemasına çevirir; photo_count dahil."""
+    r = HelpRequestResponse.model_validate(req)
+    r.photo_count = len(req.photos) if req.photos is not None else 0
+    return r
+
 
 def _require_manager_or_admin(user: User) -> None:
     """Eşleştirme tetiklemek için NGO_MANAGER, OFFICIAL_MANAGER veya ADMIN gerekir."""
@@ -47,7 +55,7 @@ async def create_help_request(
     AI servisi erişilemezse talep PENDING durumunda kalır, ileride skorlanır.
     """
     req = await request_service.create_request(db, current_user, data)
-    return HelpRequestResponse.model_validate(req)
+    return _to_response(req)
 
 
 # ─── Listeleme ve Sorgulama ─────────────────────────────────────
@@ -64,7 +72,7 @@ async def list_requests(
     Erişim: Tüm kayıtlı kullanıcılar.
     """
     reqs = await request_service.get_requests(db, status_filter=status, need_type=need_type)
-    return [HelpRequestResponse.model_validate(r) for r in reqs]
+    return [_to_response(r) for r in reqs]
 
 
 @router.get("/{request_id}", response_model=HelpRequestResponse)
@@ -75,7 +83,7 @@ async def get_request(
 ):
     """Tek yardım talebi detayını döndürür. Eşleştirme bilgisi varsa dahil edilir."""
     req = await request_service.get_request(db, request_id)
-    return HelpRequestResponse.model_validate(req)
+    return _to_response(req)
 
 
 # ─── Talep İptal ────────────────────────────────────────────────
@@ -91,7 +99,7 @@ async def cancel_request(
     Zaten COMPLETED veya CANCELLED olan talepler iptal edilemez.
     """
     req = await request_service.cancel_request(db, request_id, current_user)
-    return HelpRequestResponse.model_validate(req)
+    return _to_response(req)
 
 
 # ─── Görev Durumu Güncelleme ────────────────────────────────────
@@ -117,7 +125,64 @@ async def update_assignment_status(
     )
     # Güncel talep bilgisini döndür
     req = await request_service.get_request(db, request_id)
-    return HelpRequestResponse.model_validate(req)
+    return _to_response(req)
+
+
+# ─── Hasar Fotoğrafı Yükleme ───────────────────────────────────
+
+@router.post(
+    "/{request_id}/photos",
+    response_model=DamagePhotoResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Yardım talebine hasar fotoğrafı yükle",
+)
+async def upload_damage_photo(
+    request_id: UUID,
+    file: UploadFile = File(..., description="Hasar fotoğrafı (JPEG/PNG/WEBP, max 10 MB)"),
+    latitude: Optional[float] = Form(None, ge=-90, le=90, description="Fotoğraf konumu enlem"),
+    longitude: Optional[float] = Form(None, ge=-180, le=180, description="Fotoğraf konumu boylam"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Yardım talebine hasar fotoğrafı yükler.
+
+    - Fotoğraf AWS S3'e kaydedilir.
+    - YOLOv8 modeli ile hasar analizi yapılır ve `damage_score` döner.
+    - Talebin `area_damage_score` alanı tüm fotoğrafların ortalamasıyla güncellenir.
+    - AI servisi erişilemezse fotoğraf yine de kaydedilir; `damage_score` boş kalır.
+    - Erişim: Tüm kayıtlı kullanıcılar (vatandaş dahil).
+    """
+    photo = await photo_service.upload_damage_photo(
+        db=db,
+        request_id=request_id,
+        file=file,
+        user=current_user,
+        latitude=latitude,
+        longitude=longitude,
+    )
+    response = DamagePhotoResponse.model_validate(photo)
+    response.analysis_success = photo.damage_score is not None
+    return response
+
+
+@router.get(
+    "/{request_id}/photos",
+    response_model=list[DamagePhotoResponse],
+    summary="Yardım talebinin hasar fotoğraflarını listele",
+)
+async def list_damage_photos(
+    request_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Bir yardım talebine yüklenmiş hasar fotoğraflarını listeler.
+    Yükleme tarihine göre artan sırada döner.
+    Erişim: Tüm kayıtlı kullanıcılar.
+    """
+    # Talep varlık kontrolü (404 fırlat)
+    await request_service.get_request(db, request_id)
+    photos = await photo_service.get_request_photos(db, request_id)
+    return [DamagePhotoResponse.model_validate(p) for p in photos]
 
 
 # ─── Eşleştirme Tetikleme ───────────────────────────────────────

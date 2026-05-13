@@ -48,6 +48,7 @@ class HelpRequestResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     assignment: Optional[AssignmentResponse] = None
+    photo_count: int = 0
 
     model_config = {"from_attributes": True}
 
