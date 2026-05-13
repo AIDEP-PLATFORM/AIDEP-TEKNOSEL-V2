@@ -10,7 +10,6 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        sceneContainerStyle: { backgroundColor: '#0a1628' },
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textSecondary,
         tabBarStyle: {
@@ -46,6 +45,15 @@ export default function TabLayout() {
           title: 'Hasar Raporla',
           tabBarIcon: ({ focused, color, size }) => (
             <Ionicons name={focused ? 'warning' : 'warning-outline'} size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="team"
+        options={{
+          title: 'Ekibim',
+          tabBarIcon: ({ focused, color, size }) => (
+            <Ionicons name={focused ? 'people' : 'people-outline'} size={size} color={color} />
           ),
         }}
       />

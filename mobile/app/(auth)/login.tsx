@@ -8,6 +8,7 @@ import {
   Platform,
   ScrollView,
   Alert,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -64,9 +65,11 @@ export default function LoginScreen() {
 
         {/* Logo */}
         <View style={styles.logoContainer}>
-          <View style={styles.logoBox}>
-            <Ionicons name="shield-checkmark" size={36} color={Colors.primary} />
-          </View>
+          <Image
+            source={require('../../assets/images/aideplogo.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
           <Text style={styles.logoText}>AIDEP</Text>
           <Text style={styles.logoSub}>Afet Yönetim Platformu</Text>
         </View>
@@ -145,6 +148,11 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     marginBottom: Spacing.xl,
+  },
+  logoImage: {
+    width: 90,
+    height: 90,
+    marginBottom: Spacing.sm,
   },
   logoBox: {
     width: 72,
