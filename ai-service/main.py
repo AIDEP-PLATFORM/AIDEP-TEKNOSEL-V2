@@ -9,6 +9,7 @@ from core.redis import init_redis, close_redis, get_redis
 from core.mongodb import init_mongodb, close_mongodb, get_collection
 from core.minio_client import init_minio
 from pipeline import startup as ai_startup
+import pipeline as ai_pipeline
 from routers.ai import router as ai_router
 from services.matching import close_http_client
 
@@ -65,9 +66,12 @@ async def health() -> dict:
     except Exception:
         pass
 
+    model_status = ai_pipeline.status()
+
     return {
         "status": "ok" if (redis_ok and mongo_ok) else "degraded",
         "service": settings.PROJECT_NAME,
         "redis": redis_ok,
         "mongodb": mongo_ok,
+        "models": model_status,
     }

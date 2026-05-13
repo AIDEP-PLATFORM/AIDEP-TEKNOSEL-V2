@@ -55,7 +55,7 @@ services:
     networks:
       - aidep_network
     healthcheck:
-      test: ["CMD-SHELL", "mc alias set local http://localhost:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD && mc ready local"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -130,6 +130,12 @@ services:
       - aidep_network
     volumes:
       - ./ai-service/weights:/app/weights
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
   backend:
     build:
@@ -159,7 +165,7 @@ services:
       minio:
         condition: service_healthy
       ai-service:
-        condition: service_started
+        condition: service_healthy
     networks:
       - aidep_network
     volumes:

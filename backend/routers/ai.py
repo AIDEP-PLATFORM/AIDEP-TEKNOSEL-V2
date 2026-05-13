@@ -7,7 +7,7 @@ Auth kontrolü burada yapılır; ai-service internal endpoint'tir.
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from core.config import settings
@@ -95,6 +95,15 @@ async def damage_map(
     current_user: User = Depends(get_current_user),
 ) -> list:
     return await _proxy_get("/ai/damage-map")
+
+
+@router.get("/weather-score", summary="Koordinata göre hava durumu ve meteorology_score")
+async def weather_score(
+    latitude: float = Query(..., ge=-90, le=90),
+    longitude: float = Query(..., ge=-180, le=180),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    return await _proxy_get(f"/ai/weather-score?latitude={latitude}&longitude={longitude}")
 
 
 @router.get("/status", summary="AI model durumu")

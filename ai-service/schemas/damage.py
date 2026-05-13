@@ -25,7 +25,7 @@ class DamageDetectionResponse(BaseModel):
     grid_confirmed_count: int
     grid_aggregated_score: float = Field(..., ge=0.0, le=1.0)
     is_confirmed: bool
-    model_source: str = Field(..., description="yolov8m | mock")
+    model_source: str = Field(..., description="yolov8m")
 
 
 class DamageMapCell(BaseModel):

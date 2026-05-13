@@ -96,18 +96,23 @@ async def upload_damage_photo(
     damage_score: float | None = None
     damage_labels: dict | None = None
 
+    # Fotoğraf koordinatları yoksa talep koordinatlarını kullan (AI service zorunlu kılar)
+    effective_lat = latitude if latitude is not None else req.latitude
+    effective_lng = longitude if longitude is not None else req.longitude
+
     try:
-        form_data: dict[str, str] = {"report_id": str(request_id)}
-        if latitude is not None:
-            form_data["latitude"] = str(latitude)
-        if longitude is not None:
-            form_data["longitude"] = str(longitude)
+        form_data: dict[str, str] = {
+            "report_id": str(request_id),
+            "latitude": str(effective_lat),
+            "longitude": str(effective_lng),
+        }
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
                 f"{settings.AI_SERVICE_URL}/ai/analyze-damage",
                 data=form_data,
                 files={"file": (file.filename or f"photo{ext}", image_bytes, content_type)},
+                headers={"X-API-Key": settings.AI_INTERNAL_API_KEY},
             )
             resp.raise_for_status()
             ai_result = resp.json()
