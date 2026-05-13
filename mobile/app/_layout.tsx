@@ -13,7 +13,7 @@ export default function RootLayout() {
 
   return (
     <>
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a1628' }, animation: 'fade' }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#0a1628' }, animation: 'none' }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" options={{ animation: 'none' }} />
         <Stack.Screen name="(app)" options={{ animation: 'fade' }} />

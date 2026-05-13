@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,9 +54,11 @@ export default function RoleSelectScreen() {
 
       {/* Üst header */}
       <View style={styles.header}>
-        <View style={styles.logoBox}>
-          <Ionicons name="shield-checkmark" size={36} color={Colors.primary} />
-        </View>
+        <Image
+          source={require('../../assets/images/aideplogo.png')}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
         <Text style={styles.logoText}>AIDEP</Text>
         <Text style={styles.logoSub}>Afet Yönetim Platformu</Text>
       </View>
@@ -108,6 +110,11 @@ const styles = StyleSheet.create({
     paddingBottom: 56,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
+  },
+  logoImage: {
+    width: 90,
+    height: 90,
+    marginBottom: Spacing.sm,
   },
   logoBox: {
     width: 72,

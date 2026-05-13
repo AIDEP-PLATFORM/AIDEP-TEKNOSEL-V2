@@ -75,30 +75,30 @@ export default function HomeScreen() {
 
       {/* SOS + İkili Kartlar */}
       <View style={styles.actionsGroup}>
-      <TouchableOpacity style={styles.sosButton} activeOpacity={0.85} onPress={() => router.push('/(app)/(tabs)/report')}>
-        <View style={styles.sosIconBox}>
-          <Ionicons name="camera" size={26} color={Colors.error} />
-        </View>
-        <View>
-          <Text style={styles.sosTitle}>Hasar Raporla</Text>
-          <Text style={styles.sosSub}>Hasar bildirimi gönder</Text>
-        </View>
-      </TouchableOpacity>
-
-      {/* İkili Aksiyon Kartları */}
-      <View style={styles.actionRow}>
-        <TouchableOpacity style={styles.actionCardBlue} activeOpacity={0.85}>
-          <Ionicons name="location" size={28} color={Colors.primary} />
-          <Text style={styles.actionCardTitle}>Toplanma{'\n'}Noktaları</Text>
-          <Text style={styles.actionCardSub}>En yakın noktaları gör</Text>
+        <TouchableOpacity style={styles.sosButton} activeOpacity={0.85} onPress={() => router.push({ pathname: '/(app)/(tabs)/report', params: { openCamera: Date.now().toString() } })}>
+          <View style={styles.sosIconBox}>
+            <Ionicons name="camera" size={26} color={Colors.error} />
+          </View>
+          <View>
+            <Text style={styles.sosTitle}>Hasar Raporla</Text>
+            <Text style={styles.sosSub}>Hasar bildirimi gönder</Text>
+          </View>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.actionCardGreen} activeOpacity={0.85}>
-          <Ionicons name="git-branch-outline" size={28} color={Colors.success} />
-          <Text style={[styles.actionCardTitle, { color: Colors.success }]}>Güvenli Rota</Text>
-          <Text style={styles.actionCardSub}>Tahliye güzergahı</Text>
-        </TouchableOpacity>
-      </View>
+        {/* İkili Aksiyon Kartları */}
+        <View style={styles.actionRow}>
+          <TouchableOpacity style={styles.actionCardBlue} activeOpacity={0.85}>
+            <Ionicons name="location" size={28} color={Colors.primary} />
+            <Text style={styles.actionCardTitle}>Toplanma{'\n'}Noktaları</Text>
+            <Text style={styles.actionCardSub}>En yakın noktaları gör</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.actionCardGreen} activeOpacity={0.85}>
+            <Ionicons name="git-branch-outline" size={28} color={Colors.success} />
+            <Text style={[styles.actionCardTitle, { color: Colors.success }]}>Güvenli Rota</Text>
+            <Text style={styles.actionCardSub}>Tahliye güzergahı</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* AFAD Duyuruları */}
