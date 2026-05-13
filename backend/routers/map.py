@@ -42,7 +42,9 @@ async def get_team_locations(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Konumu paylaşan aktif gönüllü ve STK saha görevlilerini döndürür.
+    """Ekiplerin harita konumlarını döndürür.
+    Ekibin konumu, konumu paylaşan üyelerin ortalama koordinatıdır.
+    Hiçbir üyesinin konumu olmayan ekipler listede görünmez.
     Sadece NGO_MANAGER, OFFICIAL_MANAGER ve ADMIN erişebilir (web paneli).
     """
     if current_user.role not in _WEB_ROLES:

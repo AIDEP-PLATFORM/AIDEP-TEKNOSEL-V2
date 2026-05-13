@@ -11,7 +11,7 @@ from core.redis import init_redis, close_redis
 from core.minio import init_minio
 from core.s3 import init_s3
 from core.logging import setup_logging
-from routers import auth, organizations, volunteers, map as map_router, admin
+from routers import auth, organizations, volunteers, map as map_router, admin, requests as requests_router, teams as teams_router
 from routers import ai as ai_router
 
 setup_logging()
@@ -53,6 +53,8 @@ api_router.include_router(organizations.router)
 api_router.include_router(volunteers.router)
 api_router.include_router(map_router.router)
 api_router.include_router(admin.router)
+api_router.include_router(requests_router.router)
+api_router.include_router(teams_router.router)
 api_router.include_router(ai_router.router)
 app.include_router(api_router)
 

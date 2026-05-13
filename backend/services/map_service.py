@@ -9,14 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.redis import get_redis
-from models.user import (
-    NgoStaffProfile,
-    Organization,
-    User,
-    UserRole,
-    VolunteerProfile,
-)
-from schemas.map import EarthquakePoint, SafeAreaPoint, VolunteerLocation
+from models.team import Team, TeamMember
+from models.user import Organization, User
+from schemas.map import EarthquakePoint, SafeAreaPoint, TeamLocation
 
 logger = logging.getLogger(__name__)
 
@@ -174,69 +169,84 @@ out body;
 
 # ─── Ekip Konumları ─────────────────────────────────────────────
 
-async def get_team_locations(db: AsyncSession) -> list[VolunteerLocation]:
-    """Konumu paylaşan aktif gönüllü ve STK saha görevlilerini döndürür.
-    Her iki rol için ayrı JOIN yapılır (volunteer_profiles / ngo_staff_profiles).
+async def get_team_locations(db: AsyncSession) -> list[TeamLocation]:
+    """Tüm ekiplerin harita konumlarını döndürür.
+    Ekibin konumu, konumu olan üyelerin ortalama lat/lng'sidir.
+    Hiçbir üyesinin konumu olmayan ekipler listede görünmez.
     """
-    locations: list[VolunteerLocation] = []
-
-    # ── Gönüllüler ──────────────────────────────────────────────
-    vol_result = await db.execute(
+    # 1. Tüm ekipleri organizasyon bilgisiyle çek
+    teams_result = await db.execute(
         select(
-            User.id,
-            User.full_name,
-            User.role,
-            ST_Y(User.current_location).label("lat"),
-            ST_X(User.current_location).label("lng"),
+            Team.id,
+            Team.name,
+            Team.active_task_count,
             Organization.name.label("org_name"),
             Organization.city.label("org_city"),
             Organization.district.label("org_district"),
         )
-        .join(VolunteerProfile, VolunteerProfile.user_id == User.id)
-        .outerjoin(Organization, Organization.id == VolunteerProfile.organization_id)
-        .where(
-            User.role == UserRole.VOLUNTEER,
-            User.is_active.is_(True),
-            User.current_location.isnot(None),
-        )
+        .join(Organization, Organization.id == Team.organization_id)
     )
+    teams_rows = teams_result.all()
 
-    # ── STK Saha Görevlileri ─────────────────────────────────────
-    staff_result = await db.execute(
+    if not teams_rows:
+        return []
+
+    team_ids = [row.id for row in teams_rows]
+    teams_info = {row.id: row for row in teams_rows}
+
+    # 2. Her ekibin toplam üye sayısını çek
+    member_count_result = await db.execute(
+        select(TeamMember.team_id, TeamMember.user_id)
+        .where(TeamMember.team_id.in_(team_ids))
+    )
+    total_members: dict = {}
+    for row in member_count_result.all():
+        total_members[row.team_id] = total_members.get(row.team_id, 0) + 1
+
+    # 3. Konumu olan üyelerin lat/lng'lerini çek
+    located_result = await db.execute(
         select(
-            User.id,
-            User.full_name,
-            User.role,
+            TeamMember.team_id,
             ST_Y(User.current_location).label("lat"),
             ST_X(User.current_location).label("lng"),
-            Organization.name.label("org_name"),
-            Organization.city.label("org_city"),
-            Organization.district.label("org_district"),
         )
-        .join(NgoStaffProfile, NgoStaffProfile.user_id == User.id)
-        .join(Organization, Organization.id == NgoStaffProfile.organization_id)
+        .join(User, User.id == TeamMember.user_id)
         .where(
-            User.role == UserRole.NGO_STAFF,
+            TeamMember.team_id.in_(team_ids),
             User.is_active.is_(True),
             User.current_location.isnot(None),
         )
     )
+    located_rows = located_result.all()
 
-    for rows in (vol_result.all(), staff_result.all()):
-        for row in rows:
-            try:
-                locations.append(VolunteerLocation(
-                    user_id=str(row.id),
-                    full_name=row.full_name,
-                    role=row.role.value,
-                    latitude=float(row.lat),
-                    longitude=float(row.lng),
-                    organization_name=row.org_name,
-                    organization_city=row.org_city,
-                    organization_district=row.org_district,
-                ))
-            except Exception as e:
-                logger.warning(f"Konum parse hatasi: {e}")
-                continue
+    # 4. Ekip başına ortalama konum hesapla
+    team_lats: dict = {}
+    team_lngs: dict = {}
+    for row in located_rows:
+        tid = row.team_id
+        team_lats.setdefault(tid, []).append(float(row.lat))
+        team_lngs.setdefault(tid, []).append(float(row.lng))
+
+    # 5. Sonuçları oluştur (sadece konumu olan ekipler)
+    locations: list[TeamLocation] = []
+    for team_id, lats in team_lats.items():
+        lngs = team_lngs[team_id]
+        info = teams_info[team_id]
+        try:
+            locations.append(TeamLocation(
+                team_id=str(team_id),
+                team_name=info.name,
+                latitude=sum(lats) / len(lats),
+                longitude=sum(lngs) / len(lngs),
+                member_count=total_members.get(team_id, 0),
+                located_member_count=len(lats),
+                active_task_count=info.active_task_count or 0,
+                organization_name=info.org_name,
+                organization_city=info.org_city,
+                organization_district=info.org_district,
+            ))
+        except Exception as e:
+            logger.warning(f"Ekip konum parse hatasi: {e}")
+            continue
 
     return locations
