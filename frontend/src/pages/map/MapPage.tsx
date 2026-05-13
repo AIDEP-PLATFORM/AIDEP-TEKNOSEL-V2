@@ -11,8 +11,35 @@ import {
 
 type LayerKey = 'earthquakes' | 'safeAreas' | 'teams'
 const MANAGER_ROLES = ['ADMIN', 'NGO_MANAGER', 'OFFICIAL_MANAGER']
-const TILE_DARK  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
-const TILE_LIGHT = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'
+const TILE_DARK  = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
+const TILE_LIGHT = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png'
+
+const USER_LOCATION_ICON = L.divIcon({
+  className: '',
+  html: `
+    <div style="position:relative;width:20px;height:20px;display:flex;align-items:center;justify-content:center;">
+      <div style="
+        position:absolute;width:20px;height:20px;border-radius:50%;
+        background:rgba(99,102,241,0.25);border:2px solid rgba(99,102,241,0.5);
+        animation:aidep-pulse 2s infinite;
+      "></div>
+      <div style="
+        width:10px;height:10px;border-radius:50%;
+        background:#818cf8;border:2px solid white;
+        box-shadow:0 0 8px #818cf8;position:relative;z-index:1;
+      "></div>
+    </div>
+    <style>
+      @keyframes aidep-pulse {
+        0%   { transform:scale(1);   opacity:0.8; }
+        70%  { transform:scale(2.2); opacity:0;   }
+        100% { transform:scale(1);   opacity:0;   }
+      }
+    </style>
+  `,
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
+})
 
 function magColor(mag: number) {
   if (mag >= 6) return '#f87171'
@@ -42,12 +69,17 @@ export default function MapPage() {
     earthquakes: true, safeAreas: true, teams: canSeeTeams,
   })
 
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [locLoading, setLocLoading] = useState(false)
+  const [locError, setLocError] = useState('')
+
   const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef  = useRef<L.Map | null>(null)
-  const tileRef = useRef<L.TileLayer | null>(null)
-  const eqRef   = useRef<L.LayerGroup | null>(null)
-  const saRef   = useRef<L.LayerGroup | null>(null)
-  const tmRef   = useRef<L.LayerGroup | null>(null)
+  const mapRef    = useRef<L.Map | null>(null)
+  const tileRef   = useRef<L.TileLayer | null>(null)
+  const eqRef     = useRef<L.LayerGroup | null>(null)
+  const saRef     = useRef<L.LayerGroup | null>(null)
+  const tmRef     = useRef<L.LayerGroup | null>(null)
+  const userLocRef = useRef<L.Marker | null>(null)
   const tileSwapReady = useRef(false)
 
   // ── Init map (once, survive StrictMode) ─────────────────────────
@@ -67,6 +99,8 @@ export default function MapPage() {
       attribution: '&copy; CARTO &copy; OSM',
       maxZoom: 19,
       subdomains: 'abcd',
+      tileSize: 512,
+      zoomOffset: -1,
     }).addTo(map)
 
     tileRef.current  = tile
@@ -103,6 +137,8 @@ export default function MapPage() {
       attribution: '&copy; CARTO &copy; OSM',
       maxZoom: 19,
       subdomains: 'abcd',
+      tileSize: 512,
+      zoomOffset: -1,
     })
     next.setZIndex(0)
     next.addTo(map)
@@ -176,6 +212,47 @@ export default function MapPage() {
     })
   }, [teams, layers.teams, canSeeTeams])
 
+  // ── User location ────────────────────────────────────────────────
+  const goToMyLocation = () => {
+    if (!navigator.geolocation) {
+      setLocError('Tarayıcınız konum desteklemiyor.')
+      return
+    }
+    setLocLoading(true)
+    setLocError('')
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const { latitude: lat, longitude: lng } = pos.coords
+        setUserLocation({ lat, lng })
+        setLocLoading(false)
+        mapRef.current?.flyTo([lat, lng], 13, { duration: 1.4 })
+      },
+      () => {
+        setLocError('Konum alınamadı. Tarayıcı iznini kontrol edin.')
+        setLocLoading(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    )
+  }
+
+  // ── Draw / update user location marker ──────────────────────────
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    if (userLocRef.current) {
+      map.removeLayer(userLocRef.current)
+      userLocRef.current = null
+    }
+    if (!userLocation) return
+    const marker = L.marker([userLocation.lat, userLocation.lng], { icon: USER_LOCATION_ICON })
+      .bindPopup(`
+        <b style="color:#818cf8">Aktif Konumunuz</b><br/>
+        <span style="color:#888">${userLocation.lat.toFixed(5)}, ${userLocation.lng.toFixed(5)}</span>
+      `)
+      .addTo(map)
+    userLocRef.current = marker
+  }, [userLocation])
+
   const toggle = (k: LayerKey) => setLayers(p => ({ ...p, [k]: !p[k] }))
 
   const selectEq = (eq: Earthquake) => {
@@ -207,6 +284,22 @@ export default function MapPage() {
           </Text>
         </Box>
         <Flex align="center" gap={2} flexWrap="wrap">
+          {/* Aktif konum butonu */}
+          <Button
+            size="sm"
+            onClick={goToMyLocation}
+            isLoading={locLoading}
+            loadingText="Konum alınıyor..."
+            bg={userLocation ? 'rgba(129,140,248,0.18)' : 'rgba(255,255,255,0.05)'}
+            color={userLocation ? '#818cf8' : 'rgba(255,255,255,0.55)'}
+            border={`1px solid ${userLocation ? 'rgba(129,140,248,0.4)' : 'rgba(255,255,255,0.1)'}`}
+            borderRadius="lg" fontWeight="600" fontSize="xs"
+            _hover={{ opacity: 0.85 }}
+            leftIcon={<Box w={2} h={2} borderRadius="full" bg={userLocation ? '#818cf8' : 'rgba(255,255,255,0.3)'} />}
+          >
+            {userLocation ? 'Konumundasınız' : '📍 Konumumu Göster'}
+          </Button>
+
           {/* Theme toggle */}
           <Button
             size="sm"
@@ -263,6 +356,15 @@ export default function MapPage() {
           </Flex>
         )}
 
+        {/* Konum hatası */}
+        {locError && (
+          <Box position="absolute" top={4} left="50%" transform="translateX(-50%)" zIndex={1000}
+            bg="rgba(248,113,113,0.15)" border="1px solid rgba(248,113,113,0.4)"
+            borderRadius="xl" px={4} py={2} backdropFilter="blur(12px)">
+            <Text fontSize="xs" color="#f87171" fontWeight="600">{locError}</Text>
+          </Box>
+        )}
+
         {/* Leaflet container */}
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
 
@@ -287,6 +389,13 @@ export default function MapPage() {
               <Flex align="center" gap={2}>
                 <Box w={3} h={3} borderRadius="full" bg="#60a5fa" opacity={0.8} flexShrink={0} />
                 <Text fontSize="xs" color={textFaint}>Ekip Konumu</Text>
+              </Flex>
+            )}
+            {userLocation && (
+              <Flex align="center" gap={2}>
+                <Box w={3} h={3} borderRadius="full" bg="#818cf8" flexShrink={0}
+                  boxShadow="0 0 6px #818cf8" />
+                <Text fontSize="xs" color={textFaint}>Aktif Konumunuz</Text>
               </Flex>
             )}
           </Stack>
