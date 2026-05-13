@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { apiGetRequests, type HelpRequestResponse } from '@/services/requestService'
 import { apiGetEarthquakes, type Earthquake } from '@/services/mapService'
+import { apiGetDashboardSummary, type DashboardSummary } from '@/services/dashboardService'
 
 const MotionBox = motion(Box)
 
@@ -94,12 +95,15 @@ const zones = [
 function DashboardPage() {
   const [requests, setRequests]       = useState<HelpRequestResponse[]>([])
   const [earthquakes, setEarthquakes] = useState<Earthquake[]>([])
+  const [summary, setSummary]         = useState<DashboardSummary | null>(null)
   const [loadingReq, setLoadingReq]   = useState(true)
   const [loadingSeis, setLoadingSeis] = useState(true)
+  const [loadingSummary, setLoadingSummary] = useState(true)
 
   useEffect(() => {
     apiGetRequests().then(setRequests).catch(() => setRequests([])).finally(() => setLoadingReq(false))
     apiGetEarthquakes().then(setEarthquakes).catch(() => setEarthquakes([])).finally(() => setLoadingSeis(false))
+    apiGetDashboardSummary().then(setSummary).catch(() => setSummary(null)).finally(() => setLoadingSummary(false))
   }, [])
 
   const activeCount    = requests.filter(r => ACTIVE_STATUSES.has(r.status)).length
@@ -115,7 +119,7 @@ function DashboardPage() {
 
   const kpiCards = [
     { title: 'Aktif Talepler',    value: loadingReq  ? '…' : activeCount,    label: 'aktif görev',     gradient: 'linear(135deg,#dc2626,#b91c1c)', glow: 'rgba(220,38,38,0.28)',  icon: '🚨', path: '/requests'  },
-    { title: 'Müsait Gönüllüler', value: '—',                                label: 'bilgi yok',       gradient: 'linear(135deg,#6366f1,#4f46e5)', glow: 'rgba(99,102,241,0.28)', icon: '👥', path: '/volunteers' },
+    { title: 'Müsait Gönüllüler', value: loadingSummary ? '…' : (summary?.available_volunteers ?? '—'), label: summary ? `${summary.total_volunteers} toplam` : 'bilgi yok', gradient: 'linear(135deg,#6366f1,#4f46e5)', glow: 'rgba(99,102,241,0.28)', icon: '👥', path: '/volunteers' },
     { title: 'Çözülen Talepler',  value: loadingReq  ? '…' : completedCount, label: 'tamamlandı',      gradient: 'linear(135deg,#059669,#0d9488)', glow: 'rgba(5,150,105,0.28)',  icon: '✅', path: '/requests'  },
     { title: 'Sismik Kayıt',      value: loadingSeis ? '…' : earthquakes.length, label: 'son veriler', gradient: 'linear(135deg,#0369a1,#4338ca)', glow: 'rgba(3,105,161,0.28)',  icon: '📍', path: '/seismic'   },
   ]

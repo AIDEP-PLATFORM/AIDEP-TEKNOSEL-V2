@@ -11,7 +11,10 @@ import {
   type TeamResponse, type TeamDetailResponse,
 } from '@/services/teamService'
 import { apiGetOrgMembers, type OrgMember } from '@/services/volunteerService'
-import { apiRunMatching } from '@/services/requestService'
+import {
+  apiRunMatching, apiGetRequests, apiManualAssign,
+  type HelpRequestResponse,
+} from '@/services/requestService'
 
 const MotionBox  = motion(Box)
 const MotionFlex = motion(Flex)
@@ -37,6 +40,18 @@ const PlayIcon = () => (
     <polygon points="5 3 19 12 5 21 5 3"/>
   </svg>
 )
+
+const NEED_LABELS: Record<string, { label: string; icon: string; color: string }> = {
+  RESCUE:  { label: 'Kurtarma', icon: '🆘', color: '#f87171' },
+  MEDICAL: { label: 'Medikal',  icon: '🏥', color: '#fb923c' },
+  SHELTER: { label: 'Barınak',  icon: '🏠', color: '#fbbf24' },
+  FOOD:    { label: 'Gıda',     icon: '🍱', color: '#4ade80' },
+  OTHER:   { label: 'Diğer',    icon: '📋', color: '#94a3b8' },
+}
+
+const URGENCY_COLOR: Record<number, string> = {
+  5: '#f87171', 4: '#fb923c', 3: '#fbbf24', 2: '#4ade80', 1: '#94a3b8',
+}
 
 const labelStyle = {
   fontSize: '10px', fontWeight: '700' as const,
@@ -79,6 +94,12 @@ function TeamsPageInner() {
 
   // Eşleştirme
   const [matching,   setMatching]   = useState(false)
+
+  // Görev atama
+  const [pendingReqs,    setPendingReqs]    = useState<HelpRequestResponse[]>([])
+  const [loadingReqs,    setLoadingReqs]    = useState(false)
+  const [showAssign,     setShowAssign]     = useState(false)
+  const [assigningId,    setAssigningId]    = useState<string | null>(null)
 
   const loadTeams = useCallback(async () => {
     setLoading(true)
@@ -169,6 +190,40 @@ function TeamsPageInner() {
       await loadTeams()
     } catch (err: any) {
       toast({ title: err?.response?.data?.detail ?? 'Üye çıkarılamadı', status: 'error', duration: 3000 })
+    }
+  }
+
+  const loadPendingRequests = useCallback(async () => {
+    setLoadingReqs(true)
+    try {
+      const all = await apiGetRequests()
+      setPendingReqs(all.filter(r => r.status === 'PENDING' || r.status === 'SCORED'))
+    } catch { /* sessiz */ }
+    finally { setLoadingReqs(false) }
+  }, [])
+
+  const handleShowAssign = () => {
+    setShowAssign(p => !p)
+    if (!showAssign) loadPendingRequests()
+  }
+
+  const handleAssign = async (req: HelpRequestResponse) => {
+    if (!selected) return
+    setAssigningId(req.id)
+    try {
+      await apiManualAssign(req.id, selected.id)
+      toast({
+        title: 'Görev atandı',
+        description: `#${req.id.slice(-4).toUpperCase()} → ${selected.name}`,
+        status: 'success', duration: 3000, isClosable: true,
+      })
+      setPendingReqs(prev => prev.filter(r => r.id !== req.id))
+      await loadTeams()
+      setSelected(await apiGetTeamDetail(selected.id))
+    } catch (err: any) {
+      toast({ title: err?.response?.data?.detail ?? 'Atama başarısız', status: 'error', duration: 3000 })
+    } finally {
+      setAssigningId(null)
     }
   }
 
@@ -554,6 +609,126 @@ function TeamsPageInner() {
                   </Box>
                 )}
               </Box>
+
+              {/* ── Görev Ata ─────────────────────────────────── */}
+              <Box borderTop="1px solid rgba(255,255,255,0.06)">
+                <Flex
+                  px={6} py={4} align="center" justify="space-between"
+                  cursor="pointer" onClick={handleShowAssign}
+                  _hover={{ bg: 'rgba(255,255,255,0.02)' }}
+                  style={{ transition: 'background 0.15s' }}
+                >
+                  <Flex align="center" gap={2}>
+                    <Box w={2} h={2} borderRadius="full"
+                      bg={showAssign ? '#4ade80' : 'rgba(255,255,255,0.2)'} />
+                    <Text fontSize="sm" fontWeight="700" color="white">Görev Ata</Text>
+                    {pendingReqs.length > 0 && showAssign && (
+                      <Box px={2} py={0.5} borderRadius="full"
+                        bg="rgba(96,165,250,0.15)" border="1px solid rgba(96,165,250,0.3)">
+                        <Text fontSize="9px" fontWeight="700" color="#60a5fa">
+                          {pendingReqs.length} bekleyen
+                        </Text>
+                      </Box>
+                    )}
+                  </Flex>
+                  <Text fontSize="10px" color="rgba(255,255,255,0.3)">
+                    {showAssign ? '▲ Kapat' : '▼ Talepleri Listele'}
+                  </Text>
+                </Flex>
+
+                <AnimatePresence>
+                  {showAssign && (
+                    <MotionBox
+                      key="assign-panel"
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 } as any}
+                      overflow="hidden"
+                    >
+                      <Box px={6} pb={5}>
+                        {loadingReqs ? (
+                          <Flex justify="center" py={6} gap={2}>
+                            <Spinner size="sm" color="#60a5fa" />
+                            <Text fontSize="sm" color="rgba(255,255,255,0.35)">Yükleniyor...</Text>
+                          </Flex>
+                        ) : pendingReqs.length === 0 ? (
+                          <Flex justify="center" align="center" py={6} direction="column" gap={2}>
+                            <Text fontSize="sm" color="rgba(255,255,255,0.3)">Atanabilir talep yok</Text>
+                            <Text fontSize="xs" color="rgba(255,255,255,0.2)">
+                              PENDING veya SCORED durumdaki talepler burada görünür
+                            </Text>
+                          </Flex>
+                        ) : (
+                          <Stack spacing={2}>
+                            {pendingReqs.map((req, i) => {
+                              const nd   = NEED_LABELS[req.need_type] ?? NEED_LABELS.OTHER
+                              const uCol = URGENCY_COLOR[req.urgency_level] ?? '#94a3b8'
+                              const shortId = `#${req.id.slice(-4).toUpperCase()}`
+                              const isLoading = assigningId === req.id
+                              return (
+                                <MotionBox key={req.id}
+                                  initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: i * 0.04, duration: 0.2 } as any}
+                                  px={4} py={3} borderRadius="xl"
+                                  bg="rgba(255,255,255,0.03)"
+                                  border="1px solid rgba(255,255,255,0.07)"
+                                  _hover={{ bg: 'rgba(255,255,255,0.05)' }}
+                                  style={{ transition: 'background 0.15s' }}
+                                >
+                                  <Flex align="center" justify="space-between" gap={3}>
+                                    <Flex align="center" gap={3} flex={1} minW={0}>
+                                      <Text fontSize="xl" flexShrink={0}>{nd.icon}</Text>
+                                      <Box flex={1} minW={0}>
+                                        <Flex align="center" gap={2} mb={0.5} flexWrap="wrap">
+                                          <Text fontSize="xs" fontWeight="700" color="white">
+                                            {nd.label}
+                                          </Text>
+                                          <Text fontSize="9px" color="rgba(255,255,255,0.3)" fontFamily="mono">
+                                            {shortId}
+                                          </Text>
+                                          <Box px={1.5} py={0} borderRadius="full"
+                                            bg={`${uCol}18`} border={`1px solid ${uCol}40`}>
+                                            <Text fontSize="9px" fontWeight="700" color={uCol}>
+                                              Acil {req.urgency_level}
+                                            </Text>
+                                          </Box>
+                                        </Flex>
+                                        {req.description && (
+                                          <Text fontSize="xs" color="rgba(255,255,255,0.4)" isTruncated>
+                                            {req.description}
+                                          </Text>
+                                        )}
+                                        <Text fontSize="9px" color="rgba(255,255,255,0.25)" mt={0.5}>
+                                          {req.person_count} kişi · {req.latitude.toFixed(4)}, {req.longitude.toFixed(4)}
+                                        </Text>
+                                      </Box>
+                                    </Flex>
+                                    <Button
+                                      onClick={() => handleAssign(req)}
+                                      isLoading={isLoading}
+                                      isDisabled={assigningId !== null && !isLoading}
+                                      h={8} px={4} borderRadius="lg" flexShrink={0}
+                                      bg="rgba(74,222,128,0.12)"
+                                      border="1px solid rgba(74,222,128,0.3)"
+                                      color="#4ade80" fontWeight="700" fontSize="xs"
+                                      _hover={{ bg: 'rgba(74,222,128,0.22)' }}
+                                      _active={{ bg: 'rgba(74,222,128,0.3)' }}
+                                    >
+                                      Ata
+                                    </Button>
+                                  </Flex>
+                                </MotionBox>
+                              )
+                            })}
+                          </Stack>
+                        )}
+                      </Box>
+                    </MotionBox>
+                  )}
+                </AnimatePresence>
+              </Box>
+
             </MotionBox>
           )}
         </AnimatePresence>

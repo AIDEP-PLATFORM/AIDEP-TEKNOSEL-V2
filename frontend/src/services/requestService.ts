@@ -140,6 +140,15 @@ export async function apiCalculateRoute(
   return data
 }
 
+export async function apiManualAssign(requestId: string, teamId: string): Promise<HelpRequestResponse> {
+  const { data } = await API.post<HelpRequestResponse>(
+    `/requests/${requestId}/assign`,
+    { team_id: teamId },
+    { headers: auth() }
+  )
+  return data
+}
+
 export async function apiRunMatching(): Promise<MatchingRunResponse> {
   const { data } = await API.post<MatchingRunResponse>('/requests/matching/run', {}, {
     headers: auth(),

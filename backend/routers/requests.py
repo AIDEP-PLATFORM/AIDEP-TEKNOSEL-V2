@@ -10,6 +10,7 @@ from core.dependencies import get_current_user
 from models.request import AssignmentStatus, NeedType, RequestStatus
 from models.user import User, UserRole
 from schemas.photo import DamagePhotoResponse
+from pydantic import BaseModel
 from schemas.request import (
     AssignmentStatusUpdate,
     HelpRequestCreate,
@@ -257,6 +258,28 @@ async def list_damage_photos(
         r.photo_url = await photo_service.get_presigned_url(p.minio_key)
         responses.append(r)
     return responses
+
+
+# ─── Manuel Görev Atama ────────────────────────────────────────
+
+class ManualAssignBody(BaseModel):
+    team_id: UUID
+
+
+@router.post("/{request_id}/assign", response_model=HelpRequestResponse)
+async def manual_assign(
+    request_id: UUID,
+    body: ManualAssignBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Talebi manuel olarak seçilen ekibe atar.
+    Yalnızca PENDING veya SCORED durumdaki talepler atanabilir.
+    Erişim: NGO_MANAGER (kendi org ekipleri), OFFICIAL_MANAGER, ADMIN.
+    """
+    _require_manager_or_admin(current_user)
+    req = await request_service.manual_assign_request(db, request_id, body.team_id, current_user)
+    return _to_response(req)
 
 
 # ─── Eşleştirme Tetikleme ───────────────────────────────────────
