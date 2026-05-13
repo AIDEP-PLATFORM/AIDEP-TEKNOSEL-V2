@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, Union
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -73,6 +73,75 @@ async def list_requests(
     """
     reqs = await request_service.get_requests(db, status_filter=status, need_type=need_type)
     return [_to_response(r) for r in reqs]
+
+
+# ─── Aktif Görev (Mobil) ───────────────────────────────────────
+
+@router.get("/my-task", response_model=Optional[HelpRequestResponse])
+async def get_my_task(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Kullanıcının dahil olduğu ekibe atanmış aktif görevi döndürür.
+    Navigasyon için rota adımları (route_steps) dahil edilir.
+    Aktif görev yoksa null döner.
+    Erişim: VOLUNTEER, NGO_STAFF, NGO_MANAGER, OFFICIAL_STAFF, OFFICIAL_MANAGER.
+    """
+    req = await request_service.get_my_active_task(db, current_user)
+    if req is None:
+        return None
+
+    response = _to_response(req)
+
+    if req.assignment:
+        try:
+            from services.osrm_service import get_best_route
+            from core.firebase import db_get
+            from geoalchemy2.shape import to_shape
+
+            # 1. Kullanıcının ANLIK konumunu al
+            # Önce Firebase'e bak (en güncel), yoksa PostgreSQL'deki son konuma dön
+            origin_lat, origin_lon = None, None
+
+            firebase_loc = await db_get(f"locations/{current_user.id}")
+            if firebase_loc and "lat" in firebase_loc and "lon" in firebase_loc:
+                origin_lat = float(firebase_loc["lat"])
+                origin_lon = float(firebase_loc["lon"])
+            elif current_user.current_location is not None:
+                point = to_shape(current_user.current_location)
+                origin_lat = point.y
+                origin_lon = point.x
+
+            if origin_lat is None:
+                # Konum hiç bilinmiyorsa rota hesaplanamaz, steps boş döner
+                logger.info("my-task: kullanıcı konumu bilinmiyor, steps atlandı")
+                return response
+
+            # 2. Hedef = yardım talebinin konumu
+            dest_lat = req.latitude
+            dest_lon = req.longitude
+
+            # 3. Şu anki konumdan hedefe OSRM rotası (adım adım)
+            route_with_steps = await get_best_route(
+                origin_lat=origin_lat,
+                origin_lon=origin_lon,
+                dest_lat=dest_lat,
+                dest_lon=dest_lon,
+                include_steps=True,
+            )
+
+            if route_with_steps:
+                # route_geometry'yi de güncel konumdan hesaplananla güncelle
+                response.assignment.route_geometry = route_with_steps.get("geometry", [])
+                response.assignment.route_steps    = route_with_steps.get("steps", [])
+                response.assignment.route_distance_km      = route_with_steps["distance_km"]
+                response.assignment.route_duration_minutes = route_with_steps["duration_min"]
+
+        except Exception as exc:
+            logger.warning("my-task rota hesaplama hatası: %s", exc)
+
+    return response
 
 
 @router.get("/{request_id}", response_model=HelpRequestResponse)

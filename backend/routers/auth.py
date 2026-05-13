@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.database import get_db
@@ -18,6 +19,10 @@ from schemas.auth import (
     VolunteerProfileResponse,
 )
 from services import auth_service
+
+
+class FcmTokenRequest(BaseModel):
+    token: str
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -102,6 +107,22 @@ async def update_location(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Mobil uygulama anlık konumu günceller. Harita ekip görünümü için kullanılır."""
+    """
+    Mobil uygulama anlık konumu günceller.
+    PostgreSQL + Firebase Realtime DB'ye aynı anda yazar.
+    """
     user = await auth_service.update_location(db, current_user, data)
     return UserResponse.model_validate(user)
+
+
+@router.put("/me/fcm-token", status_code=204)
+async def update_fcm_token(
+    data: FcmTokenRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Mobil uygulama FCM push notification token'ını kaydeder.
+    Uygulama açılışında veya token yenilendiğinde çağrılır.
+    """
+    await auth_service.update_fcm_token(db, current_user, data.token)

@@ -145,6 +145,15 @@ async def upload_damage_photo(
 
     await db.commit()
     await db.refresh(photo)
+
+    # ── 7. Dinamik yeniden rota (arka planda, hata engellemez) ─
+    if damage_score is not None and latitude is not None and longitude is not None:
+        try:
+            from services.route_service import check_and_reroute
+            await check_and_reroute(db, latitude, longitude, damage_score)
+        except Exception as exc:
+            logger.warning("Yeniden rota kontrolü başarısız (foto kaydedildi): %s", exc)
+
     return photo
 
 

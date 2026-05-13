@@ -84,13 +84,30 @@ services:
       retries: 5
       start_period: 10s
 
-  # OSRM — osrm-data/ klasörüne Türkiye verisi işlendikten sonra aktif olur
-  # Veri yoksa ai-service mock routing kullanır (haversine/40km)
+  firebase:
+    build:
+      context: ./firebase
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    container_name: aidep_firebase
+    restart: unless-stopped
+    ports:
+      - "9010:9000"   # Realtime Database REST API (dışarıdan 9010)
+      - "4000:4000"   # Emulator UI
+    networks:
+      - aidep_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/.json?ns=demo-aidep || exit 0"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
   osrm:
     image: ghcr.io/project-osrm/osrm-backend:latest
     platform: linux/amd64
     container_name: aidep_osrm
-    profiles: ["routing"]
+    restart: unless-stopped
     command: osrm-routed --algorithm mld /data/turkey-latest.osrm
     volumes:
       - ./osrm-data:/data
@@ -98,6 +115,12 @@ services:
       - "5000:5000"
     networks:
       - aidep_network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5000/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
 
   ai-service:
     build:
@@ -155,6 +178,9 @@ services:
       OSRM_URL: http://osrm:5000
       AI_INTERNAL_API_KEY: ${AI_INTERNAL_API_KEY:-change-me-generate-with-openssl}
       AI_SERVICE_URL: http://ai-service:8000
+      FIREBASE_DATABASE_URL: http://firebase:9000
+      FIREBASE_EMULATOR: "true"
+      FIREBASE_PROJECT_ID: demo-aidep
     ports:
       - "8001:8000"
     depends_on:
@@ -166,6 +192,8 @@ services:
         condition: service_healthy
       ai-service:
         condition: service_healthy
+      firebase:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 15s
