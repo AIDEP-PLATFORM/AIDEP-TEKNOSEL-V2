@@ -132,18 +132,39 @@ async def get_damage_map() -> list[dict]:
     pattern = "ai:grid:*:scores"
     keys = await redis.keys(pattern)
 
-    cells = []
+    valid_keys = []
+    valid_coords = []
     for key in keys:
         parts = key.split(":")
         if len(parts) != 5:
             continue
-        lat, lon = float(parts[2]), float(parts[3])
-        scores_raw = await redis.lrange(key, 0, -1)
-        scores = [float(s) for s in scores_raw]
+        try:
+            lat, lon = float(parts[2]), float(parts[3])
+        except ValueError:
+            logger.warning("Geçersiz grid key formatı: %s", key)
+            continue
+        valid_keys.append(key)
+        valid_coords.append((lat, lon, parts[2], parts[3]))
+
+    if not valid_keys:
+        return []
+
+    pipe = redis.pipeline()
+    for key in valid_keys:
+        pipe.lrange(key, 0, -1)
+    all_scores_raw = await pipe.execute()
+
+    cells = []
+    for (lat, lon, lat_str, lon_str), scores_raw in zip(valid_coords, all_scores_raw):
+        try:
+            scores = [float(s) for s in scores_raw]
+        except ValueError:
+            logger.warning("Geçersiz skor verisi, grid cell atlandı: %s:%s", lat_str, lon_str)
+            continue
         count = len(scores)
         aggregated = round(sum(scores) / count, 4) if scores else 0.0
         cells.append({
-            "grid_cell_id": f"{parts[2]}:{parts[3]}",
+            "grid_cell_id": f"{lat_str}:{lon_str}",
             "latitude": lat,
             "longitude": lon,
             "aggregated_score": aggregated,
@@ -160,5 +181,8 @@ async def get_grid_score(latitude: float, longitude: float) -> float:
     scores_raw = await redis.lrange(f"ai:grid:{cell_id}:scores", 0, -1)
     if not scores_raw:
         return 0.0
-    scores = [float(s) for s in scores_raw]
+    try:
+        scores = [float(s) for s in scores_raw]
+    except ValueError:
+        return 0.0
     return round(sum(scores) / len(scores), 4)

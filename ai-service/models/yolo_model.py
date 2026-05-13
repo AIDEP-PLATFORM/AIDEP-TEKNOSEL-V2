@@ -38,6 +38,8 @@ CLASS_DAMAGE_SCORES: dict[int, float] = {
 ROAD_CLASSES     = {4, 5, 6, 7, 8, 9, 10}
 BUILDING_CLASSES = {0, 1, 2, 3}
 
+CONFIDENCE_THRESHOLD = 0.5
+
 OBJECT_NAME    = "yolov8m_damage.pt"
 LOCAL_FALLBACK = WEIGHTS_DIR / OBJECT_NAME
 
@@ -96,10 +98,13 @@ def predict_sync(image_bytes: bytes) -> list[dict]:
                 class_id = int(box.cls.item())
                 if class_id >= len(CLASS_NAMES):
                     continue
+                confidence = round(float(box.conf.item()), 4)
+                if confidence < CONFIDENCE_THRESHOLD:
+                    continue
                 detections.append({
                     "class_id":    class_id,
                     "class_name":  CLASS_NAMES[class_id],
-                    "confidence":  round(float(box.conf.item()), 4),
+                    "confidence":  confidence,
                     "bbox":        [round(v, 2) for v in box.xyxy[0].tolist()],
                     "damage_score": CLASS_DAMAGE_SCORES[class_id],
                 })
