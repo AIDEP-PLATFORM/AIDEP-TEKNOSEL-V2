@@ -1,19 +1,16 @@
 interface AidepLogoProps {
-  /** İkon boyutu (px) */
   size?: number
-  /** Sadece ikonu mu göster, yoksa AIDEP yazısını da? */
   showText?: boolean
-  /** 'sidebar' | 'auth' | 'icon-only' */
   variant?: 'sidebar' | 'auth' | 'icon-only'
 }
 
 export function EpicenterIcon({ size = 40 }: { size?: number }) {
   const cx = size / 2
-  const r1 = size * 0.10   // iç nokta
-  const r2 = size * 0.20   // 1. halka
-  const r3 = size * 0.32   // 2. halka (kesikli)
-  const r4 = size * 0.44   // 3. halka (kesikli)
-  const cross = size * 0.48 // çizgi uzunluğu (yarıçap)
+  const r1 = size * 0.10
+  const r2 = size * 0.20
+  const r3 = size * 0.32
+  const r4 = size * 0.44
+  const cross = size * 0.48
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -36,7 +33,7 @@ export function EpicenterIcon({ size = 40 }: { size?: number }) {
         </filter>
       </defs>
 
-      {/* En dış halka — çok soluk */}
+      {/* En dış halka */}
       <circle cx={cx} cy={cx} r={r4}
         stroke="#38bdf8" strokeWidth="0.6" strokeOpacity="0.2"
         strokeDasharray="3 4"/>
@@ -85,7 +82,6 @@ export default function AidepLogo({ size = 40, showText = true, variant = 'sideb
   if (variant === 'auth') {
     return (
       <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'12px' }}>
-        {/* İkon — koyu yuvarlak arka plan ile */}
         <div style={{
           width: size, height: size,
           borderRadius: '20px',
@@ -112,7 +108,6 @@ export default function AidepLogo({ size = 40, showText = true, variant = 'sideb
     )
   }
 
-  /* variant === 'sidebar' */
   return (
     <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
       <div style={{
