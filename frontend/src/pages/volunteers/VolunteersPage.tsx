@@ -6,7 +6,7 @@ import {
 import { motion } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { getRole } from '@/utils/auth'
-import { STKS, activityColor, stkStatusCfg } from '@/data/stkData'
+import { apiListOrganizations, type OrganizationRecord } from '@/services/organizationAdminService'
 import {
   apiGetPendingVolunteers, apiApproveVolunteer, apiRejectVolunteer,
   type OrgMember,
@@ -76,15 +76,12 @@ function PendingCard({ member, onApprove, onReject, loading }: {
       borderRadius="2xl" p={4} backdropFilter="blur(12px)"
     >
       <Flex align="center" gap={4}>
-        {/* Avatar */}
         <Flex w={10} h={10} borderRadius="lg" bg="rgba(251,191,36,0.12)"
           border="1px solid rgba(251,191,36,0.3)" align="center" justify="center" flexShrink={0}>
           <Text fontSize="sm" fontWeight="800" color="#fbbf24">
             {member.full_name.charAt(0).toUpperCase()}
           </Text>
         </Flex>
-
-        {/* Bilgiler */}
         <Box flex={1} minW={0}>
           <Flex align="center" gap={2} mb={0.5}>
             <Text fontSize="sm" fontWeight="700" color="white" isTruncated>{member.full_name}</Text>
@@ -109,8 +106,6 @@ function PendingCard({ member, onApprove, onReject, loading }: {
             <Text fontSize="10px" color="rgba(255,255,255,0.3)" mt={0.5}>{member.phone}</Text>
           )}
         </Box>
-
-        {/* Aksiyon butonları */}
         <Flex gap={2} flexShrink={0}>
           <MotionBox
             onClick={loading ? undefined : onApprove}
@@ -151,33 +146,35 @@ function VolunteersPage() {
   const role = getRole()
   const isNgoManager = role === 'NGO_MANAGER'
 
-  const [search, setSearch] = useState('')
-  const [pending, setPending] = useState<OrgMember[]>([])
+  const [search, setSearch]             = useState('')
+  const [orgs, setOrgs]                 = useState<OrganizationRecord[]>([])
+  const [loadingOrgs, setLoadingOrgs]   = useState(true)
+  const [pending, setPending]           = useState<OrgMember[]>([])
   const [loadingPending, setLoadingPending] = useState(false)
-  const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [actionLoading, setActionLoading]   = useState<string | null>(null)
 
   const filtered = useMemo(() =>
-    STKS.filter(s =>
-      s.org.toLowerCase().includes(search.toLowerCase()) ||
-      s.activity.toLowerCase().includes(search.toLowerCase())
-    ), [search])
-
-  const totalMembers = STKS.reduce((acc, s) => acc + s.members.length, 0)
-  const activeCount  = STKS.filter(s => s.status === 'Aktif').length
+    orgs.filter(o =>
+      o.name.toLowerCase().includes(search.toLowerCase()) ||
+      o.city.toLowerCase().includes(search.toLowerCase()) ||
+      o.district.toLowerCase().includes(search.toLowerCase())
+    ), [orgs, search])
 
   const loadPending = useCallback(async () => {
     if (!isNgoManager) return
     setLoadingPending(true)
-    try {
-      setPending(await apiGetPendingVolunteers())
-    } catch {
-      // sessiz başarısız
-    } finally {
-      setLoadingPending(false)
-    }
+    try { setPending(await apiGetPendingVolunteers()) }
+    catch { /* sessiz */ }
+    finally { setLoadingPending(false) }
   }, [isNgoManager])
 
-  useEffect(() => { loadPending() }, [loadPending])
+  useEffect(() => {
+    apiListOrganizations('STK')
+      .then(setOrgs)
+      .catch(() => setOrgs([]))
+      .finally(() => setLoadingOrgs(false))
+    loadPending()
+  }, [loadPending])
 
   const handleApprove = async (member: OrgMember) => {
     setActionLoading(member.id)
@@ -187,9 +184,7 @@ function VolunteersPage() {
       loadPending()
     } catch {
       toast({ title: 'Onaylama başarısız', status: 'error', duration: 3000, isClosable: true })
-    } finally {
-      setActionLoading(null)
-    }
+    } finally { setActionLoading(null) }
   }
 
   const handleReject = async (member: OrgMember) => {
@@ -200,9 +195,7 @@ function VolunteersPage() {
       loadPending()
     } catch {
       toast({ title: 'İşlem başarısız', status: 'error', duration: 3000, isClosable: true })
-    } finally {
-      setActionLoading(null)
-    }
+    } finally { setActionLoading(null) }
   }
 
   return (
@@ -212,7 +205,7 @@ function VolunteersPage() {
         transition={{ duration: 0.4 } as any} mb={6}>
         <Heading size="lg" color="white" fontWeight="800">STK Yetkililer</Heading>
         <Text color="rgba(255,255,255,0.4)" fontSize="sm" mt={1}>
-          Kayıtlı sivil toplum kuruluşları ve personel bilgileri
+          Kayıtlı sivil toplum kuruluşları ve şubeleri
         </Text>
       </MotionBox>
 
@@ -238,9 +231,7 @@ function VolunteersPage() {
           </Flex>
 
           {loadingPending ? (
-            <Flex justify="center" py={4}>
-              <Spinner size="sm" color="#fbbf24" />
-            </Flex>
+            <Flex justify="center" py={4}><Spinner size="sm" color="#fbbf24" /></Flex>
           ) : pending.length === 0 ? (
             <Flex align="center" justify="center" py={5} direction="column" gap={2}>
               <Text fontSize="sm" color="rgba(255,255,255,0.25)">Bekleyen gönüllü yok</Text>
@@ -251,13 +242,10 @@ function VolunteersPage() {
           ) : (
             <Stack spacing={2}>
               {pending.map(member => (
-                <PendingCard
-                  key={member.id}
-                  member={member}
+                <PendingCard key={member.id} member={member}
                   loading={actionLoading === member.id}
                   onApprove={() => handleApprove(member)}
-                  onReject={() => handleReject(member)}
-                />
+                  onReject={() => handleReject(member)} />
               ))}
             </Stack>
           )}
@@ -265,17 +253,18 @@ function VolunteersPage() {
       )}
 
       {/* ── İstatistik kartları ────────────────────────────────── */}
-      <Grid templateColumns="repeat(3, 1fr)" gap={4} mb={5}>
+      <Grid templateColumns="repeat(2, 1fr)" gap={4} mb={5}>
         {[
-          { label: 'Toplam STK',  count: STKS.length,  color: '#818cf8', bg: 'rgba(129,140,248,0.08)', border: 'rgba(129,140,248,0.2)' },
-          { label: 'Aktif',       count: activeCount,   color: '#4ade80', bg: 'rgba(74,222,128,0.08)',  border: 'rgba(74,222,128,0.2)'  },
-          { label: 'Toplam Üye',  count: totalMembers,  color: '#60a5fa', bg: 'rgba(96,165,250,0.08)',  border: 'rgba(96,165,250,0.2)'  },
+          { label: 'Toplam STK Şubesi', count: orgs.length,  color: '#818cf8', bg: 'rgba(129,140,248,0.08)', border: 'rgba(129,140,248,0.2)' },
+          { label: 'İl Sayısı',          count: new Set(orgs.map(o => o.city)).size, color: '#60a5fa', bg: 'rgba(96,165,250,0.08)', border: 'rgba(96,165,250,0.2)' },
         ].map((s, i) => (
           <MotionBox key={s.label} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.08, duration: 0.35 } as any}
             bg={s.bg} border={`1px solid ${s.border}`} borderRadius="2xl" p={5} textAlign="center"
             backdropFilter="blur(12px)">
-            <Text fontSize="3xl" fontWeight="800" color={s.color}>{s.count}</Text>
+            <Text fontSize="3xl" fontWeight="800" color={s.color}>
+              {loadingOrgs ? <Spinner size="sm" color={s.color} /> : s.count}
+            </Text>
             <Text fontSize="xs" color="rgba(255,255,255,0.4)" mt={1} fontWeight="500"
               textTransform="uppercase" letterSpacing="wider">{s.label}</Text>
           </MotionBox>
@@ -290,7 +279,7 @@ function VolunteersPage() {
             <SearchIcon />
           </InputLeftElement>
           <Input
-            placeholder="STK adı veya faaliyet alanı ara..."
+            placeholder="STK adı, il veya ilçe ara..."
             value={search} onChange={e => setSearch(e.target.value)}
             bg="rgba(255,255,255,0.04)" border="1px solid rgba(255,255,255,0.08)"
             borderRadius="xl" color="white"
@@ -302,62 +291,57 @@ function VolunteersPage() {
         </InputGroup>
       </MotionBox>
 
-      {/* ── STK Listesi ───────────────────────────────────────── */}
-      <Stack spacing={3}>
-        {filtered.map((stk, i) => {
-          const cfg    = stkStatusCfg[stk.status]
-          const aColor = activityColor[stk.activity] ?? '#9ca3af'
-          const ils    = [...new Set(stk.members.map(m => m.il))]
-
-          return (
-            <MotionBox key={stk.id}
+      {/* ── STK/Org Listesi ───────────────────────────────────── */}
+      {loadingOrgs ? (
+        <Flex justify="center" align="center" py={16}>
+          <Spinner color="#34d399" size="md" />
+        </Flex>
+      ) : (
+        <Stack spacing={3}>
+          {filtered.map((org, i) => (
+            <MotionBox key={org.id}
               initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.25 + i * 0.06, duration: 0.32 } as any}
+              transition={{ delay: 0.25 + i * 0.05, duration: 0.32 } as any}
               whileHover={{ y: -2, borderColor: 'rgba(255,255,255,0.14)' } as any}
-              onClick={() => navigate(`/volunteers/${stk.id}`)}
+              onClick={() => navigate(`/volunteers/${org.id}`)}
               cursor="pointer"
               bg="rgba(255,255,255,0.03)" border="1px solid rgba(255,255,255,0.07)"
               borderRadius="2xl" overflow="hidden" backdropFilter="blur(12px)">
               <Flex align="center" px={6} py={4} gap={4}>
                 <Flex w={12} h={12} borderRadius="xl" flexShrink={0}
-                  bg={`${aColor}18`} border={`1px solid ${aColor}33`}
+                  bg="rgba(52,211,153,0.1)" border="1px solid rgba(52,211,153,0.25)"
                   align="center" justify="center">
-                  <Box color={aColor}><UsersIcon /></Box>
+                  <Box color="#34d399"><UsersIcon /></Box>
                 </Flex>
                 <Box flex={1} minW={0}>
                   <Flex align="center" gap={2} mb={1}>
-                    <Text fontSize="sm" fontWeight="700" color="white" isTruncated>{stk.org}</Text>
-                    <Box px={2} py={0.5} borderRadius="full" bg={cfg.bg} flexShrink={0}>
-                      <Text fontSize="10px" fontWeight="700" color={cfg.color}>{stk.status}</Text>
+                    <Text fontSize="sm" fontWeight="700" color="white" isTruncated>{org.name}</Text>
+                    <Box px={2} py={0.5} borderRadius="full"
+                      bg="rgba(52,211,153,0.1)" border="1px solid rgba(52,211,153,0.25)" flexShrink={0}>
+                      <Text fontSize="10px" fontWeight="700" color="#34d399">STK</Text>
                     </Box>
                   </Flex>
                   <Flex align="center" gap={3} flexWrap="wrap">
-                    <Flex align="center" gap={1.5}>
-                      <Box w={2} h={2} borderRadius="full" bg={aColor} />
-                      <Text fontSize="xs" color="rgba(255,255,255,0.45)">{stk.activity}</Text>
-                    </Flex>
                     <Flex align="center" gap={1.5} color="rgba(255,255,255,0.35)">
-                      <UsersIcon />
-                      <Text fontSize="xs">{stk.members.length} üye</Text>
-                    </Flex>
-                    <Flex align="center" gap={1} color="rgba(255,255,255,0.35)">
                       <MapPinIcon />
-                      <Text fontSize="xs">{ils.join(' · ')}</Text>
+                      <Text fontSize="xs">{org.city} / {org.district}</Text>
                     </Flex>
                   </Flex>
                 </Box>
                 <Box color="rgba(255,255,255,0.25)" flexShrink={0}><ChevronIcon /></Box>
               </Flex>
             </MotionBox>
-          )
-        })}
+          ))}
 
-        {filtered.length === 0 && (
-          <Box textAlign="center" py={12}>
-            <Text color="rgba(255,255,255,0.3)" fontSize="sm">Sonuç bulunamadı</Text>
-          </Box>
-        )}
-      </Stack>
+          {filtered.length === 0 && !loadingOrgs && (
+            <Box textAlign="center" py={12}>
+              <Text color="rgba(255,255,255,0.3)" fontSize="sm">
+                {orgs.length === 0 ? 'Henüz kayıtlı STK şubesi yok' : 'Sonuç bulunamadı'}
+              </Text>
+            </Box>
+          )}
+        </Stack>
+      )}
     </Box>
   )
 }
