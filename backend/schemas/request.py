@@ -26,7 +26,8 @@ class AssignmentResponse(BaseModel):
     route_duration_minutes: float
     safety_score: float
     composite_score: float
-    route_geometry: Optional[dict]
+    route_geometry: Optional[list] = None   # [[lon, lat], ...]
+    route_steps: Optional[list] = None      # Adım adım yönlendirme talimatları
     status: AssignmentStatus
     assigned_at: datetime
 

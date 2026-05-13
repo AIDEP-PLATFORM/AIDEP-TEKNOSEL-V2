@@ -169,3 +169,6 @@ htmlcov/
 
 # Ruff / Black
 .ruff_cache/
+
+# OSRM harita verisi (cok buyuk, push edilmez)
+osrm-data/

@@ -250,14 +250,46 @@ async def update_volunteer_skills(
 async def update_location(
     db: AsyncSession, user: User, data: LocationUpdateRequest
 ) -> User:
-    """Mobil uygulamadan gelen anlık konumu users.current_location'a kaydeder."""
+    """
+    Mobil uygulamadan gelen anlık konumu:
+    1. PostgreSQL users.current_location'a kaydeder (kalıcı)
+    2. Firebase Realtime DB'ye yazar (gerçek zamanlı)
+
+    Firebase path: locations/<user_id>
+    """
+    from core.firebase import db_set
+    import asyncio
+
     user.current_location = from_shape(
         Point(data.longitude, data.latitude), srid=4326
     )
     await db.commit()
     await db.refresh(user)
+
+    # Firebase'e arka planda yaz (hata olursa engelleme)
+    try:
+        await db_set(
+            f"locations/{user.id}",
+            {
+                "lat": data.latitude,
+                "lon": data.longitude,
+                "user_id": str(user.id),
+                "role": user.role.value,
+                "updated_at": int(asyncio.get_event_loop().time()),
+            },
+        )
+    except Exception as exc:
+        logger.warning("Firebase konum yazma hatası: %s", exc)
+
     logger.info(f"Konum güncellendi: {user.email} → ({data.latitude}, {data.longitude})")
     return user
+
+
+async def update_fcm_token(db: AsyncSession, user: User, token: str) -> None:
+    """Kullanıcının FCM push notification token'ını günceller."""
+    user.fcm_token = token
+    await db.commit()
+    logger.info("FCM token güncellendi: %s", user.email)
 
 
 # ─── Giriş ─────────────────────────────────────────────────────
