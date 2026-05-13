@@ -13,7 +13,7 @@ import { Colors, FontSize, Spacing, BorderRadius } from '@/constants/theme';
 
 export default function CitizenRegisterScreen() {
   const insets = useSafeAreaInsets();
-  const { registerCitizen } = useAuth();
+  const { registerCitizen, logout } = useAuth();
 
   // Zorunlu alanlar
   const [fullName, setFullName] = useState('');
@@ -97,7 +97,7 @@ export default function CitizenRegisterScreen() {
     setLoading(true);
     setErrors({});
     try {
-      await registerCitizen({
+      const response = await registerCitizen({
         tc_no: tcNo,
         full_name: fullName.trim(),
         email: email.trim().toLowerCase(),
@@ -106,7 +106,16 @@ export default function CitizenRegisterScreen() {
         password_confirm: confirmPassword,
         organization_id: selectedBranch?.id,
       });
-      router.replace('/(app)/(tabs)/home');
+      if (!response.user.isActive) {
+        await logout();
+        Alert.alert(
+          'Kayıt Başarılı',
+          'Kaydınız alındı. STK yöneticinizin onayının ardından giriş yapabilirsiniz.',
+          [{ text: 'Giriş Yap', onPress: () => router.replace('/(auth)/login') }],
+        );
+      } else {
+        router.replace('/(app)/(tabs)/home');
+      }
     } catch (err: any) {
       setErrors({ general: err.message ?? 'Kayıt başarısız. Lütfen tekrar deneyin.' });
     } finally {

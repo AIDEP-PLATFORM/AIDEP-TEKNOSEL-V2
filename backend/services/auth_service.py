@@ -102,7 +102,7 @@ async def register_user(db: AsyncSession, data: RegisterRequest) -> User:
         id=uuid4(), email=data.email, phone=data.phone,
         password_hash=hash_password(data.password),
         full_name=data.full_name, tc_no=data.tc_no,
-        role=role, is_active=True,
+        role=role, is_active=role != UserRole.VOLUNTEER,
     )
     db.add(user)
     await db.flush()
