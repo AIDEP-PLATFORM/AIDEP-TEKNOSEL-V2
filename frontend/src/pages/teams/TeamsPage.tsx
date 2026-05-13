@@ -4,11 +4,14 @@ import {
   Spinner, Textarea, useToast,
 } from '@chakra-ui/react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { getRole } from '@/utils/auth'
 import {
   apiGetTeams, apiGetTeamDetail, apiCreateTeam, apiDeleteTeam,
   apiAddTeamMember, apiRemoveTeamMember,
   type TeamResponse, type TeamDetailResponse,
 } from '@/services/teamService'
+import { apiGetOrgMembers, type OrgMember } from '@/services/volunteerService'
+import { apiRunMatching } from '@/services/requestService'
 
 const MotionBox  = motion(Box)
 const MotionFlex = motion(Flex)
@@ -27,6 +30,11 @@ const UsersIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
     <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+  </svg>
+)
+const PlayIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="5 3 19 12 5 21 5 3"/>
   </svg>
 )
 
@@ -48,22 +56,29 @@ const inputStyle = {
   fontSize: 'sm',
 }
 
-export default function TeamsPage() {
-  const toast = useToast()
+function TeamsPageInner() {
+  const toast  = useToast()
+  const role   = getRole()
+  const isManager = role === 'NGO_MANAGER' || role === 'OFFICIAL_MANAGER' || role === 'ADMIN'
 
-  const [teams, setTeams]           = useState<TeamResponse[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [selected, setSelected]     = useState<TeamDetailResponse | null>(null)
-  const [detailLoading, setDL]      = useState(false)
+  const [teams,         setTeams]     = useState<TeamResponse[]>([])
+  const [loading,       setLoading]   = useState(true)
+  const [selected,      setSelected]  = useState<TeamDetailResponse | null>(null)
+  const [detailLoading, setDL]        = useState(false)
+
+  // Org üyeleri (üye seçici için)
+  const [orgMembers,    setOrgMembers]    = useState<OrgMember[]>([])
+  const [memberSearch,  setMemberSearch]  = useState('')
+  const [showPicker,    setShowPicker]    = useState(false)
+  const [addingMember,  setAddingM]       = useState(false)
 
   // Yeni ekip formu
-  const [newName, setNewName]       = useState('')
-  const [newDesc, setNewDesc]       = useState('')
-  const [creating, setCreating]     = useState(false)
+  const [newName,    setNewName]    = useState('')
+  const [newDesc,    setNewDesc]    = useState('')
+  const [creating,   setCreating]   = useState(false)
 
-  // Üye ekleme
-  const [memberUUID, setMemberUUID] = useState('')
-  const [addingMember, setAddingM]  = useState(false)
+  // Eşleştirme
+  const [matching,   setMatching]   = useState(false)
 
   const loadTeams = useCallback(async () => {
     setLoading(true)
@@ -76,10 +91,22 @@ export default function TeamsPage() {
     }
   }, [toast])
 
-  useEffect(() => { loadTeams() }, [loadTeams])
+  const loadOrgMembers = useCallback(async () => {
+    try {
+      const members = await apiGetOrgMembers()
+      setOrgMembers(members.filter(m => m.is_active))
+    } catch { /* sessiz */ }
+  }, [])
+
+  useEffect(() => {
+    loadTeams()
+    loadOrgMembers()
+  }, [loadTeams, loadOrgMembers])
 
   const selectTeam = async (id: string) => {
     setDL(true)
+    setShowPicker(false)
+    setMemberSearch('')
     try {
       setSelected(await apiGetTeamDetail(id))
     } catch {
@@ -116,13 +143,15 @@ export default function TeamsPage() {
     }
   }
 
-  const handleAddMember = async () => {
-    if (!selected || !memberUUID.trim()) return
+  const handleAddMember = async (member: OrgMember) => {
+    if (!selected) return
     setAddingM(true)
     try {
-      const updated = await apiAddTeamMember(selected.id, memberUUID.trim())
-      setSelected(updated); setMemberUUID('')
-      toast({ title: 'Üye eklendi', status: 'success', duration: 2500 })
+      const updated = await apiAddTeamMember(selected.id, member.id)
+      setSelected(updated)
+      setShowPicker(false)
+      setMemberSearch('')
+      toast({ title: `${member.full_name} eklendi`, status: 'success', duration: 2500 })
       await loadTeams()
     } catch (err: any) {
       toast({ title: err?.response?.data?.detail ?? 'Üye eklenemedi', status: 'error', duration: 3000 })
@@ -143,16 +172,62 @@ export default function TeamsPage() {
     }
   }
 
+  const handleRunMatching = async () => {
+    setMatching(true)
+    try {
+      const res = await apiRunMatching()
+      toast({
+        title: 'Eşleştirme tamamlandı',
+        description: `${res.matched} talep eşleşti, ${res.unmatched} bekliyor.`,
+        status: 'success', duration: 5000, isClosable: true,
+      })
+    } catch (err: any) {
+      toast({ title: err?.response?.data?.detail ?? 'Eşleştirme başarısız', status: 'error', duration: 3000 })
+    } finally {
+      setMatching(false)
+    }
+  }
+
+  // Zaten ekipte olan üyeleri filtrele
+  const alreadyInTeam = new Set(selected?.members.map(m => m.user_id) ?? [])
+  const availableMembers = orgMembers.filter(m =>
+    !alreadyInTeam.has(m.id) &&
+    (memberSearch === '' ||
+      m.full_name.toLowerCase().includes(memberSearch.toLowerCase()) ||
+      m.email.toLowerCase().includes(memberSearch.toLowerCase()))
+  )
+
   return (
     <Box p={{ base: 5, md: 6 }}>
 
       {/* Başlık */}
       <MotionBox initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 } as any} mb={6}>
-        <Text fontSize="xl" fontWeight="800" color="white">Ekip Yönetimi</Text>
-        <Text fontSize="sm" color="rgba(255,255,255,0.4)" mt={0.5}>
-          Organizasyonunuza ait saha ekiplerini yönetin
-        </Text>
+        <Flex align="center" justify="space-between" flexWrap="wrap" gap={3}>
+          <Box>
+            <Text fontSize="xl" fontWeight="800" color="white">Ekip Yönetimi</Text>
+            <Text fontSize="sm" color="rgba(255,255,255,0.4)" mt={0.5}>
+              Organizasyonunuza ait saha ekiplerini yönetin
+            </Text>
+          </Box>
+
+          {/* AI Eşleştirme butonu */}
+          {isManager && (
+            <Button
+              onClick={handleRunMatching}
+              isLoading={matching}
+              loadingText="Eşleştiriliyor..."
+              leftIcon={<PlayIcon />}
+              h={9} px={5} borderRadius="xl"
+              bg="rgba(129,140,248,0.15)"
+              border="1px solid rgba(129,140,248,0.35)"
+              color="#a5b4fc" fontWeight="700" fontSize="sm"
+              _hover={{ bg: 'rgba(129,140,248,0.25)' }}
+            >
+              AI Eşleştirmeyi Çalıştır
+            </Button>
+          )}
+        </Flex>
       </MotionBox>
 
       <Grid templateColumns={{ base: '1fr', lg: '320px 1fr' }} gap={6} alignItems="start">
@@ -244,7 +319,7 @@ export default function TeamsPage() {
                         </Flex>
                       </Box>
                       <MotionBox
-                        onClick={e => { e.stopPropagation(); handleDelete(t.id) }}
+                        onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleDelete(t.id) }}
                         w={7} h={7} borderRadius="lg"
                         bg="rgba(248,113,113,0.08)" border="1px solid rgba(248,113,113,0.2)"
                         display="flex" alignItems="center" justifyContent="center"
@@ -341,7 +416,7 @@ export default function TeamsPage() {
                             bg="rgba(99,102,241,0.15)" border="1px solid rgba(129,140,248,0.2)"
                             align="center" justify="center" flexShrink={0}>
                             <Text fontSize="11px" fontWeight="700" color="#a5b4fc">
-                              {m.full_name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                              {m.full_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                             </Text>
                           </Flex>
                           <Box>
@@ -350,7 +425,12 @@ export default function TeamsPage() {
                               <Text fontSize="10px" color="rgba(255,255,255,0.35)">{m.role}</Text>
                               {m.has_location && (
                                 <Box px={1.5} py={0} borderRadius="full" bg="rgba(74,222,128,0.1)">
-                                  <Text fontSize="9px" color="#4ade80">📍 Konum</Text>
+                                  <Text fontSize="9px" color="#4ade80">📍 Konum var</Text>
+                                </Box>
+                              )}
+                              {!m.has_location && (
+                                <Box px={1.5} py={0} borderRadius="full" bg="rgba(248,113,113,0.1)">
+                                  <Text fontSize="9px" color="#f87171">📍 Konum yok</Text>
                                 </Box>
                               )}
                             </Flex>
@@ -374,28 +454,105 @@ export default function TeamsPage() {
                   </Stack>
                 )}
 
-                {/* Üye ekle */}
-                <Box p={4} borderRadius="xl" bg="rgba(255,255,255,0.02)"
-                  border="1px solid rgba(255,255,255,0.06)">
-                  <Text {...labelStyle} mb={2}>Üye Ekle (Kullanıcı UUID)</Text>
-                  <Flex gap={2}>
-                    <Input flex={1} {...inputStyle}
-                      value={memberUUID} onChange={e => setMemberUUID(e.target.value)}
-                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                      fontFamily="mono" fontSize="xs" />
-                    <Button
-                      onClick={handleAddMember}
-                      isLoading={addingMember}
-                      h={9} px={4} borderRadius="xl"
-                      bg="rgba(99,102,241,0.15)" border="1px solid rgba(129,140,248,0.25)"
-                      color="#a5b4fc" fontWeight="700" fontSize="sm"
-                      _hover={{ bg: 'rgba(99,102,241,0.25)' }} _active={{ opacity: 0.8 }}
-                      flexShrink={0}
-                    >
-                      Ekle
-                    </Button>
+                {/* Üye seçici */}
+                <Box borderRadius="xl" bg="rgba(255,255,255,0.02)"
+                  border="1px solid rgba(255,255,255,0.06)" overflow="hidden">
+                  <Flex
+                    px={4} py={3} align="center" justify="space-between"
+                    borderBottom={showPicker ? '1px solid rgba(255,255,255,0.06)' : 'none'}
+                    cursor="pointer"
+                    onClick={() => setShowPicker(p => !p)}
+                    _hover={{ bg: 'rgba(255,255,255,0.03)' }}
+                  >
+                    <Text {...labelStyle} mb={0}>+ Üye Ekle</Text>
+                    <Text fontSize="10px" color="rgba(255,255,255,0.3)">
+                      {showPicker ? '▲ Kapat' : '▼ Listele'}
+                    </Text>
                   </Flex>
+
+                  {showPicker && (
+                    <Box p={3}>
+                      {/* Arama */}
+                      <Input
+                        {...inputStyle} h={8} mb={2} fontSize="xs"
+                        placeholder="İsim veya e-posta ara..."
+                        value={memberSearch}
+                        onChange={e => setMemberSearch(e.target.value)}
+                      />
+
+                      {/* Üye listesi */}
+                      <Box maxH="200px" overflowY="auto"
+                        sx={{
+                          '&::-webkit-scrollbar': { width: '3px' },
+                          '&::-webkit-scrollbar-thumb': { bg: 'rgba(255,255,255,0.15)', borderRadius: '3px' },
+                        }}>
+                        {orgMembers.length === 0 ? (
+                          <Text fontSize="xs" color="rgba(255,255,255,0.3)" textAlign="center" py={4}>
+                            Organizasyonda aktif üye bulunamadı
+                          </Text>
+                        ) : availableMembers.length === 0 ? (
+                          <Text fontSize="xs" color="rgba(255,255,255,0.3)" textAlign="center" py={4}>
+                            {memberSearch ? 'Eşleşen üye yok' : 'Tüm üyeler zaten ekipte'}
+                          </Text>
+                        ) : (
+                          <Stack spacing={1}>
+                            {availableMembers.map(member => (
+                              <MotionFlex
+                                key={member.id}
+                                align="center" justify="space-between"
+                                px={3} py={2} borderRadius="lg"
+                                bg="rgba(255,255,255,0.02)"
+                                border="1px solid rgba(255,255,255,0.05)"
+                                cursor="pointer"
+                                whileHover={{ bg: 'rgba(99,102,241,0.1)' } as any}
+                                whileTap={{ scale: 0.97 } as any}
+                                transition={{ duration: 0.12 } as any}
+                                onClick={() => handleAddMember(member)}
+                              >
+                                <Flex align="center" gap={2.5}>
+                                  <Flex w={7} h={7} borderRadius="md"
+                                    bg="rgba(99,102,241,0.12)" border="1px solid rgba(129,140,248,0.2)"
+                                    align="center" justify="center" flexShrink={0}>
+                                    <Text fontSize="10px" fontWeight="700" color="#a5b4fc">
+                                      {member.full_name.charAt(0).toUpperCase()}
+                                    </Text>
+                                  </Flex>
+                                  <Box>
+                                    <Text fontSize="xs" color="white" fontWeight="600">{member.full_name}</Text>
+                                    <Flex align="center" gap={1.5}>
+                                      <Text fontSize="9px" color="rgba(255,255,255,0.35)">{member.email}</Text>
+                                      {member.has_location && (
+                                        <Text fontSize="9px" color="#4ade80">📍</Text>
+                                      )}
+                                    </Flex>
+                                  </Box>
+                                </Flex>
+                                {addingMember ? (
+                                  <Spinner size="xs" color="#a5b4fc" />
+                                ) : (
+                                  <Box px={2} py={0.5} borderRadius="md"
+                                    bg="rgba(99,102,241,0.12)" border="1px solid rgba(129,140,248,0.25)">
+                                    <Text fontSize="9px" fontWeight="700" color="#a5b4fc">Ekle</Text>
+                                  </Box>
+                                )}
+                              </MotionFlex>
+                            ))}
+                          </Stack>
+                        )}
+                      </Box>
+                    </Box>
+                  )}
                 </Box>
+
+                {/* Konum uyarısı */}
+                {selected.members.some(m => !m.has_location) && (
+                  <Box mt={3} px={4} py={2.5} borderRadius="xl"
+                    bg="rgba(251,191,36,0.06)" border="1px solid rgba(251,191,36,0.2)">
+                    <Text fontSize="10px" color="#fbbf24" fontWeight="600">
+                      ⚠️ Konumu olmayan üyeler eşleştirmeye dahil edilemez. Mobil uygulamadan konum paylaşmaları gerekiyor.
+                    </Text>
+                  </Box>
+                )}
               </Box>
             </MotionBox>
           )}
@@ -404,4 +561,20 @@ export default function TeamsPage() {
       </Grid>
     </Box>
   )
+}
+
+export default function TeamsPage() {
+  const role = getRole()
+  if (role !== 'NGO_MANAGER') {
+    return (
+      <Flex align="center" justify="center" h="60vh" direction="column" gap={3}>
+        <Text fontSize="3xl">🔒</Text>
+        <Text fontSize="md" color="white" fontWeight="700">Erişim Kısıtlı</Text>
+        <Text fontSize="sm" color="rgba(255,255,255,0.4)" textAlign="center">
+          Ekip yönetimi yalnızca STK Yöneticileri tarafından kullanılabilir.
+        </Text>
+      </Flex>
+    )
+  }
+  return <TeamsPageInner />
 }

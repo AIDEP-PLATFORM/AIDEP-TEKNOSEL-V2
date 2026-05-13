@@ -301,9 +301,9 @@ export default function RequestsPage() {
 
                     {/* Durum */}
                     <Box>
-                      <Box display="inline-flex" align="center" gap={1.5} px={2.5} py={0.5} borderRadius="full" bg={status.bg}>
+                      <Flex display="inline-flex" align="center" gap={1.5} px={2.5} py={0.5} borderRadius="full" bg={status.bg}>
                         <Text fontSize="10px" fontWeight="700" color={status.color}>{status.label}</Text>
-                      </Box>
+                      </Flex>
                     </Box>
 
                     {/* Zaman */}

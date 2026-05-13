@@ -27,10 +27,10 @@ const baseNav = [
   { label: 'STK Yetkililer',   icon: Icons.volunteers, path: '/volunteers', badge: null, roles: ['ADMIN', 'NGO_MANAGER', 'OFFICIAL_MANAGER'] },
   { label: 'Resmi Yetkililer', icon: Icons.resources,  path: '/officials',  badge: null, roles: ['ADMIN', 'OFFICIAL_MANAGER'] },
   { label: 'Harita',           icon: Icons.map,        path: '/map',        badge: null, roles: null },
-]
-const analysisNav = [
-  { label: 'Sismik Veriler', icon: Icons.seismic,     path: '/seismic',    badge: null },
-  { label: 'Simülasyon',     icon: Icons.simulation,  path: '/simulation', badge: null },
+  { label: 'Sismik Veriler',   icon: Icons.seismic,    path: '/seismic',    badge: null, roles: null },
+  { label: 'Simülasyon',       icon: Icons.simulation, path: '/simulation', badge: null, roles: null },
+  { label: 'Ekipler',          icon: Icons.teams,      path: '/teams',      badge: null, roles: ['NGO_MANAGER'] },
+  { label: 'Süper Admin',      icon: Icons.shield,     path: '/admin',      badge: null, roles: ['ADMIN'] },
 ]
 
 const roleLabel: Record<string, { label: string; color: string }> = {
@@ -44,7 +44,8 @@ const roleLabel: Record<string, { label: string; color: string }> = {
   NGO:              { label: 'STK/NGO',         color: '#34d399' },
 }
 
-function NavItem({ item, isActive, onClick }: { item: typeof mainNav[0]; isActive: boolean; onClick: () => void }) {
+interface NavItemDef { label: string; icon: JSX.Element; path: string; badge: number | null; roles?: string[] | null }
+function NavItem({ item, isActive, onClick }: { item: NavItemDef; isActive: boolean; onClick: () => void }) {
   return (
     <MotionBox
       onClick={onClick}
@@ -108,57 +109,15 @@ function Sidebar() {
 
       {/* Logo */}
       <Box px={2} mb={6} cursor="pointer" onClick={() => navigate('/dashboard')} position="relative" zIndex={1}>
-        <AidepLogo size={36} variant="sidebar" showText={true} />
+        <AidepLogo size={44} variant="sidebar" showText={true} />
       </Box>
 
       {/* Nav */}
-      <Stack spacing={0} flex={1} position="relative" zIndex={1} overflowY="auto" overflowX="hidden"
+      <Stack spacing={0.5} flex={1} position="relative" zIndex={1} overflowY="auto" overflowX="hidden"
         css={{ '&::-webkit-scrollbar': { display: 'none' }, '&': { scrollbarWidth: 'none' } }}>
-
-        <Text fontSize="9px" fontWeight="700" color="rgba(255,255,255,0.22)"
-          letterSpacing="widest" textTransform="uppercase" px={3} mb={1}>
-          Ana Menü
-        </Text>
-        <Stack spacing={0.5} mb={4}>
-          {mainNav.map(item => (
-            <NavItem key={item.path} item={item} isActive={pathname === item.path} onClick={() => navigate(item.path)} />
-          ))}
-        </Stack>
-
-        <Text fontSize="9px" fontWeight="700" color="rgba(255,255,255,0.22)"
-          letterSpacing="widest" textTransform="uppercase" px={3} mb={1}>
-          Analiz
-        </Text>
-        <Stack spacing={0.5} mb={role === 'ADMIN' ? 4 : 0}>
-          {analysisNav.map(item => (
-            <NavItem key={item.path} item={item} isActive={pathname === item.path} onClick={() => navigate(item.path)} />
-          ))}
-        </Stack>
-
-        {(role === 'NGO_MANAGER' || role === 'OFFICIAL_MANAGER' || role === 'ADMIN') && (
-          <>
-            <Text fontSize="9px" fontWeight="700" color="rgba(255,255,255,0.22)"
-              letterSpacing="widest" textTransform="uppercase" px={3} mb={1} mt={2}>
-              Yönetim
-            </Text>
-            <Stack spacing={0.5}>
-              {(role === 'NGO_MANAGER' || role === 'OFFICIAL_MANAGER') && (
-                <NavItem
-                  item={{ label: 'Ekipler', icon: Icons.teams, path: '/teams', badge: null }}
-                  isActive={pathname === '/teams'}
-                  onClick={() => navigate('/teams')}
-                />
-              )}
-              {role === 'ADMIN' && (
-                <NavItem
-                  item={{ label: 'Süper Admin', icon: Icons.shield, path: '/admin', badge: null }}
-                  isActive={pathname === '/admin'}
-                  onClick={() => navigate('/admin')}
-                />
-              )}
-            </Stack>
-          </>
-        )}
+        {mainNav.map(item => (
+          <NavItem key={item.path} item={item} isActive={pathname === item.path} onClick={() => navigate(item.path)} />
+        ))}
       </Stack>
 
       {/* Kullanıcı kartı */}
