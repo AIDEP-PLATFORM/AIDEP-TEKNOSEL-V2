@@ -182,6 +182,36 @@ async def cancel_request(db: AsyncSession, request_id, user: User) -> HelpReques
     return req
 
 
+# ─── Aktif Görev (Mobil) ───────────────────────────────────────
+
+async def get_my_active_task(db: AsyncSession, user: User) -> HelpRequest | None:
+    """
+    Kullanıcının dahil olduğu ekibe atanmış aktif görevi döndürür.
+    ASSIGNED veya EN_ROUTE durumundaki ilk atama döner.
+    Görev yoksa None döner.
+    """
+    # Kullanıcının üye olduğu ekipleri bul
+    team_result = await db.execute(
+        select(TeamMember.team_id).where(TeamMember.user_id == user.id)
+    )
+    team_ids = [row.team_id for row in team_result.all()]
+    if not team_ids:
+        return None
+
+    # O ekiplere atanmış aktif görevleri bul
+    result = await db.execute(
+        _request_query()
+        .join(Assignment, Assignment.request_id == HelpRequest.id)
+        .where(
+            Assignment.team_id.in_(team_ids),
+            Assignment.status.in_([AssignmentStatus.ASSIGNED, AssignmentStatus.EN_ROUTE]),
+        )
+        .order_by(HelpRequest.created_at.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 # ─── Görev Durumu Güncelleme ────────────────────────────────────
 
 async def update_assignment_status(

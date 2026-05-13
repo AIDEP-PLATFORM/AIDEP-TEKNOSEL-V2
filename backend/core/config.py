@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     AI_SERVICE_URL: str = "http://ai-service:8000"
     AI_INTERNAL_API_KEY: str = "change-me-generate-with-openssl"
 
+    # Firebase
+    FIREBASE_DATABASE_URL: str = "http://localhost:9000"
+    FIREBASE_EMULATOR: bool = True
+    FIREBASE_PROJECT_ID: str = "demo-aidep"
+    FCM_SERVER_KEY: str = ""  # Production'da GCM/FCM server key
+
     # Auth
     SECRET_KEY: str
     ALGORITHM: str = "HS256"

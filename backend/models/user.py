@@ -98,6 +98,9 @@ class User(Base):
     current_location = mapped_column(
         Geometry("POINT", srid=4326), nullable=True
     )
+    fcm_token: Mapped[str | None] = mapped_column(
+        String(512), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
