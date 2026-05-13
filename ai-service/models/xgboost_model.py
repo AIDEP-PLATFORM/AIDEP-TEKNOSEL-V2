@@ -23,21 +23,27 @@ def _load_sync(model_path: Path) -> None:
 
 
 async def load_xgboost() -> None:
-    # 1) MinIO'dan indir
     minio_path = WEIGHTS_DIR / OBJECT_NAME
-    ok = await download_model(OBJECT_NAME, minio_path)
 
+    # 1) Zaten cache'liyse tekrar indirme (reload döngüsünü önler)
+    if minio_path.exists():
+        logger.info("Model cache'den yükleniyor: %s", minio_path)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _load_sync, minio_path)
+        return
+
+    # 2) MinIO'dan indir
+    ok = await download_model(OBJECT_NAME, minio_path)
     if ok and minio_path.exists():
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, _load_sync, minio_path)
         return
 
-    # 2) Yerel weights/ fallback (bind-mount)
+    # 3) Yerel weights/ fallback (bind-mount)
     if LOCAL_FALLBACK.exists():
         logger.info("MinIO'da model yok — yerel dosya kullanılıyor: %s", LOCAL_FALLBACK)
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, _load_sync, LOCAL_FALLBACK)
-        # Yerel modeli MinIO'ya yedekle
         await upload_model(LOCAL_FALLBACK, OBJECT_NAME)
         return
 
