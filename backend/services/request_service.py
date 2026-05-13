@@ -266,3 +266,67 @@ async def _decrement_team_task_count(db: AsyncSession, team_id) -> None:
     team = result.scalar_one_or_none()
     if team and team.active_task_count and team.active_task_count > 0:
         team.active_task_count -= 1
+
+
+# ─── Manuel Görev Atama ─────────────────────────────────────────
+
+async def manual_assign_request(
+    db: AsyncSession,
+    request_id,
+    team_id,
+    current_user: User,
+) -> HelpRequest:
+    """Belirli bir talebi seçilen ekibe manuel olarak atar.
+    NGO_MANAGER yalnızca kendi organizasyonuna ait ekiplere atayabilir.
+    """
+    from models.user import NgoManagerProfile
+
+    req = await get_request(db, request_id)
+
+    if req.status not in (RequestStatus.PENDING, RequestStatus.SCORED):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Talep '{req.status.value}' durumunda olduğu için atanamaz",
+        )
+
+    team_result = await db.execute(select(Team).where(Team.id == team_id))
+    team = team_result.scalar_one_or_none()
+    if not team:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ekip bulunamadı")
+
+    if current_user.role == UserRole.NGO_MANAGER:
+        mgr_result = await db.execute(
+            select(NgoManagerProfile.organization_id)
+            .where(NgoManagerProfile.user_id == current_user.id)
+        )
+        org_id = mgr_result.scalar_one_or_none()
+        if not org_id or str(team.organization_id) != str(org_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Bu ekibe atama yapmak için yetkiniz yok",
+            )
+
+    if req.assignment:
+        req.assignment.team_id = team_id
+        req.assignment.status = AssignmentStatus.ASSIGNED
+    else:
+        assignment = Assignment(
+            request_id=req.id,
+            team_id=team_id,
+            route_distance_km=0.0,
+            route_duration_minutes=0.0,
+            safety_score=1.0,
+            composite_score=1.0,
+            status=AssignmentStatus.ASSIGNED,
+        )
+        db.add(assignment)
+
+    req.status = RequestStatus.ASSIGNED
+    team.active_task_count = (team.active_task_count or 0) + 1
+
+    await db.commit()
+    logger.info(
+        f"Manuel atama: talep={request_id} → ekip={team_id} "
+        f"(yapan: {current_user.email})"
+    )
+    return await get_request(db, req.id)
