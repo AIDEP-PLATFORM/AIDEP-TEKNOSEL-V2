@@ -19,6 +19,27 @@ _W_LOAD   = 0.10   # yük dengesi    — tükenmişliği önle
 
 _MAX_DISTANCE_KM  = 50.0
 _MAX_ACTIVE_TASKS = 3
+_MAX_CANDIDATES   = 20   # OSRM değerlendirmesi için mesafeye göre en yakın N aday
+_MATCH_TIMEOUT    = 30.0 # tek talep için maksimum eşleştirme süresi (saniye)
+
+_http_client: httpx.AsyncClient | None = None
+
+
+def get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(
+            timeout=5.0,
+            limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
+        )
+    return _http_client
+
+
+async def close_http_client() -> None:
+    global _http_client
+    if _http_client is not None:
+        await _http_client.aclose()
+        _http_client = None
 
 
 async def _fetch_osrm_route(
@@ -66,7 +87,7 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dphi = math.radians(lat2 - lat1)
     dlam = math.radians(lon2 - lon1)
     a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
-    return R * 2 * math.asin(math.sqrt(a))
+    return R * 2 * math.asin(min(1.0, math.sqrt(a)))
 
 
 async def _route_safety_score(
@@ -142,41 +163,54 @@ async def match_volunteers(
     assignments: list[Assignment] = []
     unmatched: list[UUID] = []
 
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        for req in sorted_requests:
-            candidates = [
-                v for v in volunteers
-                if v.volunteer_id not in assigned_volunteers
-                and v.active_task_count < _MAX_ACTIVE_TASKS
-            ]
+    client = get_http_client()
+    for req in sorted_requests:
+        # Mesafe ön filtresi + aktif görev filtresi
+        candidates = [
+            v for v in volunteers
+            if v.volunteer_id not in assigned_volunteers
+            and v.active_task_count < _MAX_ACTIVE_TASKS
+            and _haversine(v.latitude, v.longitude, req.latitude, req.longitude) <= _MAX_DISTANCE_KM
+        ]
 
-            if not candidates:
-                unmatched.append(req.request_id)
-                continue
+        if not candidates:
+            unmatched.append(req.request_id)
+            continue
 
-            # Tüm adayları paralel değerlendir
-            results = await asyncio.gather(
-                *[_evaluate_volunteer(client, req, vol) for vol in candidates],
-                return_exceptions=True,
+        # En yakın _MAX_CANDIDATES adayı OSRM'e gönder
+        candidates.sort(key=lambda v: _haversine(v.latitude, v.longitude, req.latitude, req.longitude))
+        candidates = candidates[:_MAX_CANDIDATES]
+
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(
+                    *[_evaluate_volunteer(client, req, vol) for vol in candidates],
+                    return_exceptions=True,
+                ),
+                timeout=_MATCH_TIMEOUT,
             )
+        except asyncio.TimeoutError:
+            logger.error("Eslestirme zaman asimi | request=%s", req.request_id)
+            unmatched.append(req.request_id)
+            continue
 
-            best: Assignment | None = None
-            for res in results:
-                if isinstance(res, Exception) or res is None:
-                    continue
-                if best is None or res.composite_score > best.composite_score:
-                    best = res
+        best: Assignment | None = None
+        for res in results:
+            if isinstance(res, Exception) or res is None:
+                continue
+            if best is None or res.composite_score > best.composite_score:
+                best = res
 
-            if best:
-                assignments.append(best)
-                assigned_volunteers.add(best.volunteer_id)
-                logger.info(
-                    "Eslestirme | request=%s → volunteer=%s composite=%.3f",
-                    req.request_id, best.volunteer_id, best.composite_score,
-                )
-            else:
-                unmatched.append(req.request_id)
-                logger.warning("Eslestirme basarisiz | request=%s", req.request_id)
+        if best:
+            assignments.append(best)
+            assigned_volunteers.add(best.volunteer_id)
+            logger.info(
+                "Eslestirme | request=%s → volunteer=%s composite=%.3f",
+                req.request_id, best.volunteer_id, best.composite_score,
+            )
+        else:
+            unmatched.append(req.request_id)
+            logger.warning("Eslestirme basarisiz | request=%s", req.request_id)
 
     return MatchResponse(
         assignments=assignments,

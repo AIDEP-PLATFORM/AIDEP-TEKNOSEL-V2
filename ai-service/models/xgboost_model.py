@@ -69,14 +69,21 @@ def predict_sync(features: np.ndarray) -> float:
 
 def _mock_predict(features: np.ndarray) -> float:
     # features: [urgency, wait, distance, need_type, meteo, persons, damage]
-    urgency      = float(features[0]) / 5.0
-    wait_norm    = min(float(features[1]) / 480.0, 1.0)
-    dist_pen     = max(0.0, 1.0 - float(features[2]) / 20.0)
-    need_w       = [1.0, 0.9, 0.6, 0.4, 0.3]
-    need_score   = need_w[min(int(features[3]), 4)]
-    meteo_score  = float(features[4])
-    persons_norm = min(float(features[5]) / 50.0, 1.0)
-    damage_score = float(features[6])
+    if len(features) < 7:
+        logger.warning("XGBoost: eksik feature vektörü (%d < 7)", len(features))
+        return 0.0
+    try:
+        urgency      = float(features[0]) / 5.0
+        wait_norm    = min(float(features[1]) / 480.0, 1.0)
+        dist_pen     = max(0.0, 1.0 - float(features[2]) / 20.0)
+        need_w       = [1.0, 0.9, 0.6, 0.4, 0.3]
+        need_score   = need_w[max(0, min(int(features[3]), 4))]
+        meteo_score  = float(features[4])
+        persons_norm = min(float(features[5]) / 50.0, 1.0)
+        damage_score = float(features[6])
+    except (ValueError, TypeError) as exc:
+        logger.error("XGBoost mock tahmin hatası: %s", exc)
+        return 0.0
 
     score = (
         urgency      * 25.0 +
