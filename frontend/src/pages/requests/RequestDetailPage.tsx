@@ -1,11 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Box, Flex, Grid, Text, Stack, Spinner, useToast } from '@chakra-ui/react'
 import { motion } from 'framer-motion'
 import { useNavigate, useParams } from 'react-router-dom'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { getRole } from '@/utils/auth'
 import {
-  apiGetRequest, apiCancelRequest, apiUpdateAssignmentStatus,
+  apiGetRequest, apiCancelRequest, apiUpdateAssignmentStatus, apiCalculateRoute,
+  apiGetRequestPhotos,
   type HelpRequestResponse, type NeedType, type RequestStatus, type AssignmentStatus,
+  type RouteStep, type RouteCalculationResult, type DamagePhotoItem,
 } from '@/services/requestService'
 
 const MotionBox = motion(Box)
@@ -91,6 +95,164 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hrs / 24)} gün önce`
 }
 
+// ── RouteMap ──────────────────────────────────────────────────────
+function RouteMap({
+  routeGeometry, destLat, destLon, liveRoute,
+}: {
+  routeGeometry: [number, number][]
+  destLat: number
+  destLon: number
+  liveRoute?: RouteCalculationResult | null
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const mapRef       = useRef<L.Map | null>(null)
+  const liveLayerRef = useRef<L.LayerGroup | null>(null)
+
+  // İlk kurulum
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return
+    const map = L.map(containerRef.current, { zoomControl: false, attributionControl: false })
+    mapRef.current = map
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png', { maxZoom: 19 }).addTo(map)
+
+    // Atama rotası (mor) — [[lon,lat]] → [[lat,lon]]
+    const latlngs: L.LatLngTuple[] = routeGeometry.map(([lon, lat]) => [lat, lon])
+    if (latlngs.length > 0) {
+      const poly = L.polyline(latlngs, { color: '#818cf8', weight: 4, opacity: 0.75, dashArray: '8,5' }).addTo(map)
+      const startIcon = L.divIcon({
+        className: '',
+        html: `<div style="width:10px;height:10px;border-radius:50%;background:#4ade80;border:2px solid white;box-shadow:0 0 6px #4ade80;"></div>`,
+        iconSize: [10, 10], iconAnchor: [5, 5],
+      })
+      L.marker(latlngs[0], { icon: startIcon }).bindPopup('Ekip konumu').addTo(map)
+      map.fitBounds(poly.getBounds(), { padding: [20, 20] })
+    } else {
+      // Atama rotası yoksa sadece hedef merkezle
+      map.setView([destLat, destLon], 13)
+    }
+
+    // Hedef marker
+    const destIcon = L.divIcon({
+      className: '',
+      html: `<div style="width:13px;height:13px;border-radius:50%;background:#f87171;border:2px solid white;box-shadow:0 0 8px #f87171;"></div>`,
+      iconSize: [13, 13], iconAnchor: [6, 6],
+    })
+    L.marker([destLat, destLon], { icon: destIcon }).bindPopup('Talep konumu').addTo(map)
+
+    liveLayerRef.current = L.layerGroup().addTo(map)
+
+    return () => {
+      map.remove()
+      mapRef.current = null
+      liveLayerRef.current = null
+    }
+  }, [routeGeometry, destLat, destLon])
+
+  // Canlı rota güncellenince çiz
+  useEffect(() => {
+    const layer = liveLayerRef.current
+    const map   = mapRef.current
+    if (!layer || !map) return
+    layer.clearLayers()
+    if (!liveRoute?.geometry?.length) return
+
+    const latlngs: L.LatLngTuple[] = liveRoute.geometry.map(([lon, lat]) => [lat, lon])
+    const poly = L.polyline(latlngs, { color: '#fb923c', weight: 5, opacity: 0.9 }).addTo(layer)
+
+    // Kullanıcı konumu marker (pulsing)
+    const userIcon = L.divIcon({
+      className: '',
+      html: `
+        <div style="position:relative;width:18px;height:18px;display:flex;align-items:center;justify-content:center;">
+          <div style="position:absolute;width:18px;height:18px;border-radius:50%;background:rgba(251,146,60,0.25);border:2px solid rgba(251,146,60,0.6);animation:aidep-pulse 2s infinite;"></div>
+          <div style="width:9px;height:9px;border-radius:50%;background:#fb923c;border:2px solid white;box-shadow:0 0 6px #fb923c;position:relative;z-index:1;"></div>
+        </div>`,
+      iconSize: [18, 18], iconAnchor: [9, 9],
+    })
+    L.marker(latlngs[0], { icon: userIcon })
+      .bindPopup(`Konumunuz · ${liveRoute.distance_km.toFixed(1)} km · ~${Math.round(liveRoute.duration_min)} dk`)
+      .addTo(layer)
+
+    map.fitBounds(poly.getBounds(), { padding: [24, 24] })
+  }, [liveRoute])
+
+  return (
+    <Box ref={containerRef} h="240px" w="100%" borderRadius="xl" overflow="hidden"
+      border="1px solid rgba(129,140,248,0.2)" />
+  )
+}
+
+// ── ManeuverIcon ──────────────────────────────────────────────────
+function ManeuverIcon({ maneuver }: { maneuver: string }) {
+  const icons: Record<string, string> = {
+    turn: '↩',
+    'new name': '→',
+    depart: '▶',
+    arrive: '🏁',
+    merge: '⤵',
+    'on ramp': '↗',
+    'off ramp': '↘',
+    fork: '⑂',
+    roundabout: '↻',
+    rotary: '↻',
+  }
+  return <>{icons[maneuver] ?? '→'}</>
+}
+
+// ── RouteSteps ────────────────────────────────────────────────────
+function RouteSteps({ steps }: { steps: RouteStep[] }) {
+  const [expanded, setExpanded] = useState(false)
+  const visible = expanded ? steps : steps.slice(0, 4)
+
+  return (
+    <Box>
+      <Stack spacing={1}>
+        {visible.map((step, i) => (
+          <Flex key={i} align="flex-start" gap={3} py={2}
+            borderBottom={i < visible.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none'}>
+            <Box
+              w={7} h={7} borderRadius="lg" flexShrink={0}
+              bg="rgba(129,140,248,0.12)" border="1px solid rgba(129,140,248,0.2)"
+              display="flex" alignItems="center" justifyContent="center"
+              fontSize="12px" color="#818cf8"
+            >
+              <ManeuverIcon maneuver={step.maneuver} />
+            </Box>
+            <Box flex={1} minW={0}>
+              <Text fontSize="sm" color="rgba(255,255,255,0.8)" fontWeight="500" noOfLines={1}>
+                {step.instruction}
+              </Text>
+              {step.street_name && (
+                <Text fontSize="11px" color="rgba(255,255,255,0.35)" noOfLines={1}>
+                  {step.street_name}
+                </Text>
+              )}
+            </Box>
+            <Box textAlign="right" flexShrink={0}>
+              <Text fontSize="11px" color="rgba(255,255,255,0.4)" fontFamily="mono">
+                {step.distance_m >= 1000
+                  ? `${(step.distance_m / 1000).toFixed(1)} km`
+                  : `${step.distance_m} m`}
+              </Text>
+            </Box>
+          </Flex>
+        ))}
+      </Stack>
+
+      {steps.length > 4 && (
+        <Box
+          mt={2} cursor="pointer" textAlign="center"
+          onClick={() => setExpanded(e => !e)}
+        >
+          <Text fontSize="12px" color="#818cf8" fontWeight="600">
+            {expanded ? '▲ Daha az göster' : `▼ ${steps.length - 4} adım daha`}
+          </Text>
+        </Box>
+      )}
+    </Box>
+  )
+}
+
 // ── InfoRow ───────────────────────────────────────────────────────
 function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
@@ -136,6 +298,11 @@ export default function RequestDetailPage() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [notFound, setNotFound] = useState(false)
+  const [liveRoute, setLiveRoute] = useState<RouteCalculationResult | null>(null)
+  const [routeLoading, setRouteLoading] = useState(false)
+  const [photos, setPhotos] = useState<DamagePhotoItem[]>([])
+  const [photosLoading, setPhotosLoading] = useState(false)
+  const [selectedPhoto, setSelectedPhoto] = useState<DamagePhotoItem | null>(null)
 
   const load = useCallback(async () => {
     if (!id) { setNotFound(true); setLoading(false); return }
@@ -149,7 +316,58 @@ export default function RequestDetailPage() {
     }
   }, [id])
 
+  const loadPhotos = useCallback(async () => {
+    if (!id) return
+    setPhotosLoading(true)
+    try {
+      const data = await apiGetRequestPhotos(id)
+      setPhotos(data)
+    } catch { /* fotoğraf yüklenemedi */ } finally {
+      setPhotosLoading(false)
+    }
+  }, [id])
+
   useEffect(() => { load() }, [load])
+  useEffect(() => { loadPhotos() }, [loadPhotos])
+
+  // photo_count değişince fotoğrafları yenile (mobil yükleme sonrası)
+  useEffect(() => {
+    if (request?.photo_count) loadPhotos()
+  }, [request?.photo_count, loadPhotos])
+
+  const handleCalculateRoute = async () => {
+    if (!request) return
+    if (!navigator.geolocation) {
+      toast({ title: 'Tarayıcınız konum desteklemiyor', status: 'error', duration: 3000, isClosable: true })
+      return
+    }
+    setRouteLoading(true)
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const result = await apiCalculateRoute(
+            request.id,
+            pos.coords.latitude,
+            pos.coords.longitude,
+          )
+          setLiveRoute(result)
+          toast({
+            title: `Rota hesaplandı: ${result.distance_km.toFixed(1)} km · ~${Math.round(result.duration_min)} dk`,
+            status: 'success', duration: 4000, isClosable: true,
+          })
+        } catch {
+          toast({ title: 'Rota hesaplanamadı', status: 'error', duration: 3000, isClosable: true })
+        } finally {
+          setRouteLoading(false)
+        }
+      },
+      () => {
+        toast({ title: 'Konum alınamadı. Tarayıcı iznini kontrol edin.', status: 'warning', duration: 3000, isClosable: true })
+        setRouteLoading(false)
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    )
+  }
 
   const handleCancel = async () => {
     if (!request) return
@@ -335,6 +553,118 @@ export default function RequestDetailPage() {
             </MotionBox>
           )}
 
+          {/* Rota Haritası — atama rotası VEYA canlı rota varsa göster */}
+          {(assignment?.route_geometry?.length || liveRoute) && (
+            <MotionBox initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.22, duration: 0.3 } as any}
+              bg="rgba(129,140,248,0.04)" border="1px solid rgba(129,140,248,0.15)"
+              borderRadius="2xl" p={5} backdropFilter="blur(12px)">
+
+              {/* Başlık + legend */}
+              <Flex align="center" justify="space-between" mb={3} flexWrap="wrap" gap={2}>
+                <Text fontSize="10px" fontWeight="700" color="rgba(255,255,255,0.3)"
+                  textTransform="uppercase" letterSpacing="widest">Rota</Text>
+                <Flex gap={3} align="center" flexWrap="wrap">
+                  <Flex align="center" gap={1.5}>
+                    <Box w={4} h="2px" borderRadius="full" bg="#818cf8" opacity={0.7} />
+                    <Text fontSize="10px" color="rgba(255,255,255,0.35)">Ekip rotası</Text>
+                  </Flex>
+                  {liveRoute && (
+                    <Flex align="center" gap={1.5}>
+                      <Box w={4} h="2px" borderRadius="full" bg="#fb923c" />
+                      <Text fontSize="10px" color="rgba(255,255,255,0.35)">Konumunuzdan</Text>
+                    </Flex>
+                  )}
+                  <Flex align="center" gap={1.5}>
+                    <Box w={2} h={2} borderRadius="full" bg="#4ade80" />
+                    <Text fontSize="10px" color="rgba(255,255,255,0.35)">Başlangıç</Text>
+                  </Flex>
+                  <Flex align="center" gap={1.5}>
+                    <Box w={2} h={2} borderRadius="full" bg="#f87171" />
+                    <Text fontSize="10px" color="rgba(255,255,255,0.35)">Hedef</Text>
+                  </Flex>
+                </Flex>
+              </Flex>
+
+              {/* Canlı rota özeti */}
+              {liveRoute && (
+                <Flex gap={5} mb={3} px={3} py={2} borderRadius="lg"
+                  bg="rgba(251,146,60,0.08)" border="1px solid rgba(251,146,60,0.2)">
+                  <Box>
+                    <Text fontSize="9px" color="rgba(255,255,255,0.3)" textTransform="uppercase" letterSpacing="wider">Mesafe</Text>
+                    <Text fontSize="sm" fontWeight="700" color="#fb923c">{liveRoute.distance_km.toFixed(1)} km</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="9px" color="rgba(255,255,255,0.3)" textTransform="uppercase" letterSpacing="wider">Tahmini Süre</Text>
+                    <Text fontSize="sm" fontWeight="700" color="#fb923c">~{Math.round(liveRoute.duration_min)} dk</Text>
+                  </Box>
+                  <Box>
+                    <Text fontSize="9px" color="rgba(255,255,255,0.3)" textTransform="uppercase" letterSpacing="wider">Yol Durumu</Text>
+                    <Text fontSize="sm" fontWeight="700" color={liveRoute.damage_score > 3 ? '#f87171' : '#4ade80'}>
+                      {liveRoute.damage_score === 0 ? 'Temiz' : `⚠️ ${liveRoute.damage_score} hasar`}
+                    </Text>
+                  </Box>
+                </Flex>
+              )}
+
+              <RouteMap
+                routeGeometry={assignment?.route_geometry ?? []}
+                destLat={request.latitude}
+                destLon={request.longitude}
+                liveRoute={liveRoute}
+              />
+
+              {/* Konumdan Hesapla butonu */}
+              <MotionBox mt={3} cursor={routeLoading ? 'not-allowed' : 'pointer'}
+                px={4} py={2.5} borderRadius="xl"
+                bg="rgba(251,146,60,0.1)" border="1px solid rgba(251,146,60,0.3)"
+                whileHover={{ opacity: routeLoading ? 1 : 0.85 } as any}
+                whileTap={{ scale: routeLoading ? 1 : 0.97 } as any}
+                transition={{ duration: 0.12 } as any}
+                onClick={routeLoading ? undefined : handleCalculateRoute}>
+                <Flex align="center" justify="center" gap={2}>
+                  {routeLoading && <Spinner size="xs" color="#fb923c" />}
+                  <Text fontSize="sm" fontWeight="600" color="#fb923c">
+                    {routeLoading ? 'Konum alınıyor...' : liveRoute ? '🔄 Rotayı Yenile' : '📍 Konumdan Rota Hesapla'}
+                  </Text>
+                </Flex>
+              </MotionBox>
+            </MotionBox>
+          )}
+
+          {/* Adım Adım Navigasyon — önce canlı rota, yoksa atama rotası */}
+          {(() => {
+            const steps = liveRoute?.steps?.length
+              ? liveRoute.steps
+              : assignment?.route_steps?.length
+                ? assignment.route_steps
+                : null
+            const isLive = !!(liveRoute?.steps?.length)
+            if (!steps) return null
+            return (
+              <MotionBox initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.26, duration: 0.3 } as any}
+                bg={isLive ? 'rgba(251,146,60,0.04)' : 'rgba(129,140,248,0.04)'}
+                border={`1px solid ${isLive ? 'rgba(251,146,60,0.2)' : 'rgba(129,140,248,0.15)'}`}
+                borderRadius="2xl" p={5} backdropFilter="blur(12px)">
+                <Flex align="center" gap={2} mb={3}>
+                  <Text fontSize="10px" fontWeight="700" color="rgba(255,255,255,0.3)"
+                    textTransform="uppercase" letterSpacing="widest">
+                    {isLive ? 'Konumunuzdan Navigasyon' : 'Navigasyon'}
+                  </Text>
+                  <Box px={2} py={0.5} borderRadius="full"
+                    bg={isLive ? 'rgba(251,146,60,0.15)' : 'rgba(129,140,248,0.15)'}
+                    border={`1px solid ${isLive ? 'rgba(251,146,60,0.3)' : 'rgba(129,140,248,0.3)'}`}>
+                    <Text fontSize="9px" fontWeight="700" color={isLive ? '#fb923c' : '#818cf8'}>
+                      {steps.length} adım
+                    </Text>
+                  </Box>
+                </Flex>
+                <RouteSteps steps={steps} />
+              </MotionBox>
+            )
+          })()}
+
           {/* Skor bilgisi */}
           {(request.priority_score != null || request.area_damage_score != null) && (
             <MotionBox initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
@@ -359,6 +689,77 @@ export default function RequestDetailPage() {
                   </Text>
                 </Box>
               </Grid>
+            </MotionBox>
+          )}
+
+          {/* Hasar Fotoğrafları & AI Sonuçları */}
+          {(photos.length > 0 || photosLoading || request.photo_count > 0) && (
+            <MotionBox initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.28, duration: 0.3 } as any}
+              bg="rgba(248,113,113,0.03)" border="1px solid rgba(248,113,113,0.15)"
+              borderRadius="2xl" p={5} backdropFilter="blur(12px)">
+
+              <Flex align="center" justify="space-between" mb={4}>
+                <Flex align="center" gap={2}>
+                  <Text fontSize="10px" fontWeight="700" color="rgba(255,255,255,0.3)"
+                    textTransform="uppercase" letterSpacing="widest">
+                    Hasar Fotoğrafları & AI Sonuçları
+                  </Text>
+                  <Box px={2} py={0.5} borderRadius="full"
+                    bg="rgba(248,113,113,0.15)" border="1px solid rgba(248,113,113,0.3)">
+                    <Text fontSize="9px" fontWeight="700" color="#f87171">
+                      {photos.length} fotoğraf
+                    </Text>
+                  </Box>
+                </Flex>
+                <Box
+                  cursor="pointer" px={2.5} py={1} borderRadius="lg"
+                  bg="rgba(255,255,255,0.04)" border="1px solid rgba(255,255,255,0.1)"
+                  onClick={loadPhotos}
+                  _hover={{ bg: 'rgba(255,255,255,0.08)' }}
+                >
+                  <Text fontSize="10px" color="rgba(255,255,255,0.4)" fontWeight="600">
+                    {photosLoading ? '⟳' : '↻'} Yenile
+                  </Text>
+                </Box>
+              </Flex>
+
+              {photosLoading && photos.length === 0 ? (
+                <Flex justify="center" py={6}>
+                  <Spinner size="md" color="#f87171" thickness="2px" />
+                </Flex>
+              ) : (
+                <Stack spacing={3}>
+                  {photos.map(photo => (
+                    <DamagePhotoCard
+                      key={photo.id}
+                      photo={photo}
+                      isSelected={selectedPhoto?.id === photo.id}
+                      onSelect={() => setSelectedPhoto(p => p?.id === photo.id ? null : photo)}
+                    />
+                  ))}
+                </Stack>
+              )}
+
+              {/* Lightbox */}
+              {selectedPhoto?.photo_url && (
+                <Box
+                  mt={3} borderRadius="xl" overflow="hidden"
+                  border="1px solid rgba(248,113,113,0.25)"
+                  cursor="pointer" onClick={() => setSelectedPhoto(null)}
+                  position="relative"
+                >
+                  <img
+                    src={selectedPhoto.photo_url}
+                    alt={selectedPhoto.original_filename ?? 'Hasar fotoğrafı'}
+                    style={{ width: '100%', maxHeight: '320px', objectFit: 'contain', background: 'rgba(0,0,0,0.4)' }}
+                  />
+                  <Box position="absolute" top={2} right={2}
+                    bg="rgba(0,0,0,0.6)" borderRadius="full" px={2} py={0.5}>
+                    <Text fontSize="10px" color="rgba(255,255,255,0.6)">✕ Kapat</Text>
+                  </Box>
+                </Box>
+              )}
             </MotionBox>
           )}
         </Stack>
@@ -405,6 +806,14 @@ export default function RequestDetailPage() {
                 onClick={() => navigate('/map')}
               />
 
+              {/* Konumdan Rota Hesapla — her zaman */}
+              <ActionButton
+                label={routeLoading ? 'Konum alınıyor...' : liveRoute ? '🔄 Rotayı Yenile' : '📍 Konumdan Rota Hesapla'}
+                color="#fb923c" bg="rgba(251,146,60,0.1)" border="rgba(251,146,60,0.25)"
+                loading={routeLoading}
+                onClick={handleCalculateRoute}
+              />
+
               {/* Atandı → Yola Çık */}
               {assignment?.status === 'ASSIGNED' && (
                 <ActionButton
@@ -438,6 +847,102 @@ export default function RequestDetailPage() {
           </MotionBox>
         </Stack>
       </Grid>
+    </Box>
+  )
+}
+
+// ── DamagePhotoCard ───────────────────────────────────────────────
+function DamagePhotoCard({ photo, isSelected, onSelect }: {
+  photo: DamagePhotoItem
+  isSelected: boolean
+  onSelect: () => void
+}) {
+  const score = photo.damage_score
+  const scoreColor = score == null ? '#94a3b8' : score >= 0.7 ? '#f87171' : score >= 0.4 ? '#fb923c' : '#4ade80'
+  const scoreLabel = score == null ? 'Analiz bekleniyor' : score >= 0.7 ? 'Ağır Hasar' : score >= 0.4 ? 'Orta Hasar' : 'Hafif Hasar'
+
+  const labelEntries: [string, number][] = photo.damage_labels
+    ? Array.isArray(photo.damage_labels)
+      ? (photo.damage_labels as any[]).map((d: any) => [d.label ?? d.class ?? 'Hasar', d.confidence ?? 1])
+      : Object.entries(photo.damage_labels as Record<string, number>)
+    : []
+
+  return (
+    <Box
+      borderRadius="xl"
+      bg={isSelected ? 'rgba(248,113,113,0.08)' : 'rgba(255,255,255,0.03)'}
+      border={`1px solid ${isSelected ? 'rgba(248,113,113,0.3)' : 'rgba(255,255,255,0.07)'}`}
+      overflow="hidden"
+      transition="all 0.15s"
+    >
+      <Flex align="center" gap={3} px={4} py={3}>
+        {/* Thumbnail */}
+        <Box
+          w={12} h={12} borderRadius="lg" flexShrink={0} overflow="hidden"
+          bg="rgba(255,255,255,0.06)" border="1px solid rgba(255,255,255,0.1)"
+          cursor={photo.photo_url ? 'pointer' : 'default'}
+          onClick={photo.photo_url ? onSelect : undefined}
+          _hover={photo.photo_url ? { opacity: 0.85 } : {}}
+        >
+          {photo.photo_url ? (
+            <img src={photo.photo_url} alt="hasar"
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <Flex w="full" h="full" align="center" justify="center">
+              <Text fontSize="18px">📷</Text>
+            </Flex>
+          )}
+        </Box>
+
+        <Box flex={1} minW={0}>
+          <Flex align="center" gap={2} mb={1}>
+            <Box px={2} py={0.5} borderRadius="full"
+              bg={`${scoreColor}18`} border={`1px solid ${scoreColor}40`}>
+              <Text fontSize="9px" fontWeight="700" color={scoreColor}>{scoreLabel}</Text>
+            </Box>
+            {!photo.analysis_success && (
+              <Box px={2} py={0.5} borderRadius="full"
+                bg="rgba(148,163,184,0.12)" border="1px solid rgba(148,163,184,0.3)">
+                <Text fontSize="9px" color="#94a3b8">AI analiz bekleniyor</Text>
+              </Box>
+            )}
+          </Flex>
+          <Text fontSize="10px" color="rgba(255,255,255,0.3)">
+            {new Date(photo.created_at).toLocaleString('tr-TR', {
+              day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+            })}
+          </Text>
+        </Box>
+
+        <Box textAlign="right" flexShrink={0}>
+          <Text fontSize="lg" fontWeight="800" color={scoreColor} lineHeight="1">
+            {score != null ? `${(score * 100).toFixed(0)}%` : '—'}
+          </Text>
+          <Text fontSize="9px" color="rgba(255,255,255,0.3)">hasar</Text>
+        </Box>
+      </Flex>
+
+      {score != null && (
+        <Box px={4} pb={2}>
+          <Box h="3px" bg="rgba(255,255,255,0.08)" borderRadius="full" overflow="hidden">
+            <Box h="full" borderRadius="full" bg={scoreColor}
+              style={{ width: `${(score * 100).toFixed(0)}%`, transition: 'width 0.5s' }} />
+          </Box>
+        </Box>
+      )}
+
+      {labelEntries.length > 0 && (
+        <Flex gap={1.5} px={4} pb={3} flexWrap="wrap">
+          {labelEntries.slice(0, 6).map(([label, count]) => (
+            <Box key={label} px={2} py={0.5} borderRadius="md"
+              bg="rgba(248,113,113,0.1)" border="1px solid rgba(248,113,113,0.2)">
+              <Text fontSize="9px" color="#fca5a5" fontWeight="600">
+                {label}{typeof count === 'number' && count > 1 ? ` ×${count}` : ''}
+              </Text>
+            </Box>
+          ))}
+        </Flex>
+      )}
     </Box>
   )
 }

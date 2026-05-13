@@ -189,6 +189,35 @@ async def get_request_photos(db: AsyncSession, request_id) -> list[DamagePhoto]:
     return list(result.scalars().all())
 
 
+async def get_presigned_url(minio_key: str, expires_in: int = 3600) -> str | None:
+    """MinIO/S3'ten presigned GET URL üretir (tarayıcı erişimi için)."""
+    try:
+        import aioboto3
+        from botocore.config import Config as BotoConfig
+
+        # Presigned URL için public URL kullan (tarayıcı erişebilsin)
+        endpoint = settings.MINIO_PUBLIC_URL
+        pub_session = aioboto3.Session(
+            aws_access_key_id=settings.MINIO_ROOT_USER,
+            aws_secret_access_key=settings.MINIO_ROOT_PASSWORD,
+        )
+        async with pub_session.client(
+            "s3",
+            endpoint_url=endpoint,
+            config=BotoConfig(signature_version="s3v4"),
+        ) as s3:
+            bucket = settings.AWS_S3_BUCKET or "damage-photos"
+            url = await s3.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket, "Key": minio_key},
+                ExpiresIn=expires_in,
+            )
+        return url
+    except Exception as exc:
+        logger.warning("Presigned URL üretilemedi: %s", exc)
+        return None
+
+
 def _ext_from_content_type(content_type: str) -> str:
     return {
         "image/jpeg": ".jpg",

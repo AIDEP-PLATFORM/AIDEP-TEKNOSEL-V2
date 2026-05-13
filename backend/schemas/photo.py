@@ -27,4 +27,7 @@ class DamagePhotoResponse(BaseModel):
     # Analizin başarılı olup olmadığını gösteren yardımcı alan
     analysis_success: bool = True
 
+    # Presigned URL (tarayıcı erişimi için, router tarafından doldurulur)
+    photo_url: Optional[str] = None
+
     model_config = {"from_attributes": True}

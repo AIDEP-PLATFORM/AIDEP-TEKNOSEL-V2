@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     MINIO_ROOT_USER: str
     MINIO_ROOT_PASSWORD: str
     MINIO_URL: str = "http://localhost:9002"
+    MINIO_PUBLIC_URL: str = "http://localhost:9002"  # tarayıcıdan erişilebilir URL (presigned için)
     MINIO_BUCKET_DATASETS: str = "ai-datasets"
 
     # AWS S3
@@ -56,7 +57,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
 
     # CORS
-    ALLOWED_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    ALLOWED_ORIGINS: List[str] = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"]
 
     class Config:
         env_file = "../.env"

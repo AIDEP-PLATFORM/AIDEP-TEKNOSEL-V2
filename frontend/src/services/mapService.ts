@@ -63,6 +63,18 @@ export interface TeamLocation {
   last_updated: string
 }
 
+export interface ActiveRoute {
+  requestId: string
+  teamId: string | null
+  assignmentStatus: 'ASSIGNED' | 'EN_ROUTE'
+  needType: string
+  destLat: number
+  destLon: number
+  geometry: [number, number][]   // [[lon, lat], ...] — OSRM formatı
+  distanceKm: number
+  durationMin: number
+}
+
 // ── API functions ────────────────────────────────────────────────
 
 export async function apiGetEarthquakes(): Promise<Earthquake[]> {
@@ -88,6 +100,66 @@ export async function apiGetSafeAreas(): Promise<SafeArea[]> {
     longitude: s.longitude,
     capacity:  s.capacity ?? undefined,
   }))
+}
+
+export interface ActiveRequestForMap {
+  id: string
+  needType: string
+  urgencyLevel: number
+  personCount: number
+  latitude: number
+  longitude: number
+  status: string
+  assignmentStatus?: string
+  routeGeometry?: [number, number][]
+}
+
+export async function apiGetMapRequests(): Promise<ActiveRequestForMap[]> {
+  const token = getToken()
+  const headers = token ? { Authorization: `Bearer ${token}` } : {}
+
+  const [assigned, enRoute] = await Promise.all([
+    API.get('/requests', { headers, params: { status: 'ASSIGNED' } }),
+    API.get('/requests', { headers, params: { status: 'EN_ROUTE' } }),
+  ])
+
+  return [...(assigned.data ?? []), ...(enRoute.data ?? [])].map((r: any) => ({
+    id:               r.id,
+    needType:         r.need_type,
+    urgencyLevel:     r.urgency_level,
+    personCount:      r.person_count,
+    latitude:         r.latitude,
+    longitude:        r.longitude,
+    status:           r.status,
+    assignmentStatus: r.assignment?.status,
+    routeGeometry:    r.assignment?.route_geometry ?? undefined,
+  }))
+}
+
+export async function apiGetActiveRoutes(): Promise<ActiveRoute[]> {
+  const token = getToken()
+  const headers = token ? { Authorization: `Bearer ${token}` } : {}
+
+  const [assigned, enRoute] = await Promise.all([
+    API.get('/requests', { headers, params: { status: 'ASSIGNED' } }),
+    API.get('/requests', { headers, params: { status: 'EN_ROUTE' } }),
+  ])
+
+  const all = [...(assigned.data ?? []), ...(enRoute.data ?? [])]
+
+  return all
+    .filter((r: any) => r.assignment?.route_geometry?.length > 0)
+    .map((r: any) => ({
+      requestId:        r.id,
+      teamId:           r.assignment.team_id,
+      assignmentStatus: r.assignment.status as 'ASSIGNED' | 'EN_ROUTE',
+      needType:         r.need_type,
+      destLat:          r.latitude,
+      destLon:          r.longitude,
+      geometry:         r.assignment.route_geometry,
+      distanceKm:       r.assignment.route_distance_km ?? 0,
+      durationMin:      r.assignment.route_duration_minutes ?? 0,
+    }))
 }
 
 export async function apiGetTeams(): Promise<TeamLocation[]> {

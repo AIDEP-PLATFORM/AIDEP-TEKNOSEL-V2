@@ -124,7 +124,7 @@ async def run_matching(db: AsyncSession, current_user: User) -> dict:
             route_duration_minutes=assignment_data["route_duration_minutes"],
             safety_score=assignment_data["safety_score"],
             composite_score=assignment_data["composite_score"],
-            route_geometry=assignment_data.get("route_geometry"),
+            route_geometry=_normalize_geometry(assignment_data.get("route_geometry")),
             status=AssignmentStatus.ASSIGNED,
         )
         db.add(assignment)
@@ -253,6 +253,15 @@ async def _increment_team_task_count(db: AsyncSession, team_id: str) -> None:
     team = result.scalar_one_or_none()
     if team:
         team.active_task_count = (team.active_task_count or 0) + 1
+
+
+def _normalize_geometry(geometry) -> list | None:
+    """AI servisi GeoJSON dict veya koordinat listesi dönderebilir, ikisini de kabul et."""
+    if geometry is None:
+        return None
+    if isinstance(geometry, dict):
+        return geometry.get("coordinates")
+    return geometry
 
 
 def _need_type_to_skills(need_type: NeedType) -> list[str]:
