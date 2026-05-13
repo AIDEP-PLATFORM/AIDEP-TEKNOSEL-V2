@@ -1,0 +1,58 @@
+<svg width="240" height="280" viewBox="0 0 240 280" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Login butonu ile aynı gradient: #dc2626 → #ea580c → #f97316 -->
+    <linearGradient id="wave-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#f97316"/>
+      <stop offset="50%"  stop-color="#ea580c"/>
+      <stop offset="100%" stop-color="#dc2626"/>
+    </linearGradient>
+    <linearGradient id="ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#dc2626"/>
+    </linearGradient>
+    <!-- Koyu UI arka planına uyumlu -->
+    <radialGradient id="bg-grad" cx="50%" cy="40%" r="60%">
+      <stop offset="0%"   stop-color="#0f0f23"/>
+      <stop offset="100%" stop-color="#08091a"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Koyu arka plan — UI (#08091a) ile uyumlu -->
+  <rect width="240" height="280" rx="40" fill="url(#bg-grad)"/>
+  <rect width="240" height="280" rx="40"
+        stroke="#ea580c" stroke-width="1.5" stroke-opacity="0.25" fill="none"/>
+
+  <!-- Epicenter halkaları -->
+  <path d="M 54,76 A 24,24 0 0 0 102,76"
+        stroke="#f97316" stroke-width="4" stroke-linecap="round"
+        stroke-opacity="0.45" fill="none"/>
+  <path d="M 36,76 A 42,42 0 0 0 120,76"
+        stroke="#ea580c" stroke-width="2.5" stroke-linecap="round"
+        stroke-opacity="0.25" fill="none"/>
+
+  <!-- Ana sismik dalga -->
+  <polyline
+    points="36,133 60,133 78,76 90,169 102,106 114,133 204,133"
+    stroke="url(#wave-grad)" stroke-width="13.5"
+    stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+
+  <!-- Epicenter noktası -->
+  <circle cx="78" cy="76" r="12" fill="#f97316"/>
+  <circle cx="78" cy="76" r="6"  fill="white" fill-opacity="0.9"/>
+
+  <!-- AIDEP yazısı — beyaz, UI text rengiyle uyumlu -->
+  <text
+    x="120" y="228"
+    text-anchor="middle"
+    font-family="'Inter', 'SF Pro Display', Arial, sans-serif"
+    font-weight="900"
+    font-size="36"
+    fill="white"
+    letter-spacing="10"
+  >AIDEP</text>
+
+  <!-- Yazı altı ince çizgi — gradient -->
+  <line x1="48" y1="242" x2="192" y2="242"
+        stroke="url(#ring-grad)" stroke-width="1.5" stroke-opacity="0.4" stroke-linecap="round"/>
+
+</svg>

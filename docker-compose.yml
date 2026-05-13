@@ -55,7 +55,7 @@ services:
     networks:
       - aidep_network
     healthcheck:
-      test: ["CMD-SHELL", "mc alias set local http://localhost:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD && mc ready local"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -153,6 +153,12 @@ services:
       - aidep_network
     volumes:
       - ./ai-service/weights:/app/weights
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
 
   backend:
     build:
@@ -185,7 +191,7 @@ services:
       minio:
         condition: service_healthy
       ai-service:
-        condition: service_started
+        condition: service_healthy
       firebase:
         condition: service_started
     networks:
@@ -193,6 +199,26 @@ services:
     volumes:
       - ./backend:/app
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    platform: linux/amd64
+    container_name: aidep_frontend
+    restart: unless-stopped
+    env_file:
+      - ./frontend/.env
+    ports:
+      - "${FRONTEND_PORT:-3000}:5173"
+    depends_on:
+      - backend
+    networks:
+      - aidep_network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
 
 networks:
   aidep_network:

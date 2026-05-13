@@ -69,7 +69,27 @@ async def log_requests(request: Request, call_next):
     return response
 
 
+# ─── CORS headers helper (hata yanıtları için) ────────────────
+def _cors_headers(request: Request) -> dict:
+    origin = request.headers.get("origin", "")
+    if origin in settings.ALLOWED_ORIGINS:
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+        }
+    return {}
+
 # ─── Global hata yakalayıcı ────────────────────────────────────
+from fastapi import HTTPException as FastAPIHTTPException
+
+@app.exception_handler(FastAPIHTTPException)
+async def cors_http_exception_handler(request: Request, exc: FastAPIHTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+        headers=_cors_headers(request),
+    )
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(
@@ -79,7 +99,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
     return JSONResponse(
         status_code=500,
-        content={"detail": "Sunucu hatası. Lütfen tekrar deneyin."},
+        content={"detail": f"{type(exc).__name__}: {exc}"},
+        headers=_cors_headers(request),
     )
 
 

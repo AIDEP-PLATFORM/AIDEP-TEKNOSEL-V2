@@ -79,11 +79,13 @@ async def _score_request(db: AsyncSession, req: HelpRequest) -> None:
         "request_id": str(req.id),
         "urgency_level": req.urgency_level,
         "wait_time_minutes": wait_minutes,
-        "distance_km": 5.0,          # TODO: en yakın gönüllüye gerçek mesafe
+        "distance_km": 5.0,
         "need_type": _NEED_TYPE_TO_INT[req.need_type],
-        "meteorology_score": 0.5,    # TODO: MGM API entegrasyonu
+        "meteorology_score": 0.5,
         "person_count": req.person_count,
-        "area_damage_score": req.area_damage_score or 0.5,
+        "area_damage_score": req.area_damage_score if req.area_damage_score is not None else 0.5,
+        "latitude": req.latitude,
+        "longitude": req.longitude,
     }
 
     try:
@@ -104,6 +106,29 @@ async def _score_request(db: AsyncSession, req: HelpRequest) -> None:
     except Exception as e:
         # AI service erişilemez → PENDING olarak bırak, ileride tekrar denenebilir
         logger.warning(f"AI service skor hatasi (talep PENDING kalacak): {e}")
+
+
+# ─── Toplu Re-Score ────────────────────────────────────────────
+
+async def score_pending_requests(db: AsyncSession) -> dict:
+    """AI servisi geçici olarak erişilemezken PENDING kalan tüm talepleri yeniden skorlar."""
+    result = await db.execute(
+        select(HelpRequest).where(HelpRequest.status == RequestStatus.PENDING)
+    )
+    pending = list(result.scalars().all())
+
+    if not pending:
+        return {"scored": 0, "still_pending": 0, "total": 0}
+
+    scored = 0
+    for req in pending:
+        await _score_request(db, req)
+        if req.status == RequestStatus.SCORED:
+            scored += 1
+
+    still_pending = len(pending) - scored
+    logger.info(f"Toplu re-score: {scored}/{len(pending)} talep skorlandi")
+    return {"scored": scored, "still_pending": still_pending, "total": len(pending)}
 
 
 # ─── Listeleme ve Sorgulama ─────────────────────────────────────

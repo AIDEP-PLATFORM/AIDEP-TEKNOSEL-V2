@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ScrollView, ActivityIndicator, Platform,
@@ -10,6 +10,7 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, BorderRadius } from '@/constants/theme';
+import { mapService, EarthquakePoint, SafeAreaPoint } from '@/services/map.service';
 
 const FILTERS = [
   { key: 'hasar', label: 'Hasar', icon: 'warning-outline', color: Colors.error },
@@ -17,8 +18,6 @@ const FILTERS = [
   { key: 'toplanma', label: 'Toplanma', icon: 'location-outline', color: Colors.success },
   { key: 'guvenlirota', label: 'Güvenli Rota', icon: 'shield-outline', color: '#a78bfa' },
 ];
-
-const MOCK_STATS = { hasar: 23, mesafe: '3.1 km', sure: '5 dk' };
 
 const TURKEY_REGION = {
   latitude: 37.871,
@@ -34,6 +33,9 @@ export default function MapScreen() {
   const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationError, setLocationError] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [earthquakes, setEarthquakes] = useState<EarthquakePoint[]>([]);
+  const [safeAreas, setSafeAreas] = useState<SafeAreaPoint[]>([]);
+  const [visibleRegion, setVisibleRegion] = useState(TURKEY_REGION);
 
   useEffect(() => {
     (async () => {
@@ -45,7 +47,13 @@ export default function MapScreen() {
       }
       try {
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        setLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+        setLocation(coords);
+        mapRef.current?.animateToRegion({
+          ...coords,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
+        }, 800);
       } catch {
         setLocationError(true);
       } finally {
@@ -53,6 +61,32 @@ export default function MapScreen() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    mapService.getEarthquakes().then(setEarthquakes).catch(() => {});
+    mapService.getSafeAreas().then(setSafeAreas).catch(() => {});
+  }, []);
+
+  const isZoomedIn = visibleRegion.latitudeDelta < 0.5;
+
+  const visibleEarthquakes = useMemo(() => {
+    if (!isZoomedIn) return earthquakes.slice(0, 50);
+    return earthquakes.filter(eq =>
+      Math.abs(eq.latitude - visibleRegion.latitude) < visibleRegion.latitudeDelta &&
+      Math.abs(eq.longitude - visibleRegion.longitude) < visibleRegion.longitudeDelta
+    );
+  }, [earthquakes, visibleRegion, isZoomedIn]);
+
+  const visibleSafeAreas = useMemo(() => {
+    if (!isZoomedIn) {
+      const step = Math.ceil(safeAreas.length / 25);
+      return safeAreas.filter((_, i) => i % step === 0);
+    }
+    return safeAreas.filter(area =>
+      Math.abs(area.latitude - visibleRegion.latitude) < visibleRegion.latitudeDelta &&
+      Math.abs(area.longitude - visibleRegion.longitude) < visibleRegion.longitudeDelta
+    );
+  }, [safeAreas, visibleRegion, isZoomedIn]);
 
   const goToMyLocation = () => {
     if (!location || !mapRef.current) return;
@@ -82,7 +116,40 @@ export default function MapScreen() {
         showsMyLocationButton={false}
         showsCompass={false}
         toolbarEnabled={false}
+        onRegionChangeComplete={setVisibleRegion}
       >
+        {/* Deprem marker'ları */}
+        {activeFilter === 'hasar' && visibleEarthquakes.map((eq) => (
+          <Marker
+            key={eq.event_id}
+            coordinate={{ latitude: eq.latitude, longitude: eq.longitude }}
+            title={eq.location}
+            description={`M${eq.magnitude} · ${eq.depth}km derinlik`}
+          >
+            <View style={[styles.earthquakeMarker, {
+              width: Math.max(16, eq.magnitude * 6),
+              height: Math.max(16, eq.magnitude * 6),
+              borderRadius: Math.max(8, eq.magnitude * 3),
+            }]}>
+              <Text style={styles.earthquakeMag}>{eq.magnitude.toFixed(1)}</Text>
+            </View>
+          </Marker>
+        ))}
+
+        {/* Toplanma alanı marker'ları */}
+        {activeFilter === 'toplanma' && visibleSafeAreas.map((area) => (
+          <Marker
+            key={area.osm_id}
+            coordinate={{ latitude: area.latitude, longitude: area.longitude }}
+            title={area.name ?? 'Toplanma Alanı'}
+            description={area.capacity ? `Kapasite: ${area.capacity}` : undefined}
+          >
+            <View style={styles.safeAreaMarker}>
+              <Ionicons name="shield-checkmark" size={14} color="#fff" />
+            </View>
+          </Marker>
+        ))}
+
         {location && (
           <>
             <Circle
@@ -124,7 +191,7 @@ export default function MapScreen() {
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Deprem Haritası</Text>
-            <Text style={styles.headerSub}>{MOCK_STATS.hasar} hasar raporu</Text>
+            <Text style={styles.headerSub}>{earthquakes.length} deprem · {safeAreas.length} toplanma alanı</Text>
           </View>
           <TouchableOpacity style={styles.locBtn} onPress={goToMyLocation}>
             <Ionicons name="navigate" size={18} color={Colors.primary} />
@@ -157,9 +224,14 @@ export default function MapScreen() {
                 <Text style={[styles.filterLabel, active && { color: '#fff', fontWeight: '700' }]}>
                   {f.label}
                 </Text>
-                {f.key === 'hasar' && (
+                {f.key === 'hasar' && earthquakes.length > 0 && (
                   <View style={[styles.badge, { backgroundColor: active ? 'rgba(255,255,255,0.3)' : Colors.error }]}>
-                    <Text style={styles.badgeText}>{MOCK_STATS.hasar}</Text>
+                    <Text style={styles.badgeText}>{earthquakes.length}</Text>
+                  </View>
+                )}
+                {f.key === 'toplanma' && safeAreas.length > 0 && (
+                  <View style={[styles.badge, { backgroundColor: active ? 'rgba(255,255,255,0.3)' : Colors.success }]}>
+                    <Text style={styles.badgeText}>{safeAreas.length}</Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -174,14 +246,14 @@ export default function MapScreen() {
         <View style={styles.statsRow}>
           <View style={styles.statItem}>
             <View style={[styles.statDot, { backgroundColor: Colors.error }]} />
-            <Text style={styles.statNum}>{MOCK_STATS.hasar}</Text>
-            <Text style={styles.statLabel}>Hasar</Text>
+            <Text style={styles.statNum}>{earthquakes.length}</Text>
+            <Text style={styles.statLabel}>Deprem</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
-            <View style={[styles.statDot, { backgroundColor: '#a78bfa' }]} />
-            <Text style={styles.statNum}>{MOCK_STATS.mesafe}</Text>
-            <Text style={styles.statLabel}>Güzergah</Text>
+            <View style={[styles.statDot, { backgroundColor: Colors.success }]} />
+            <Text style={styles.statNum}>{safeAreas.length}</Text>
+            <Text style={styles.statLabel}>Toplanma</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
@@ -195,9 +267,7 @@ export default function MapScreen() {
         <View style={styles.distanceRow}>
           <Ionicons name="location-outline" size={16} color={Colors.primary} />
           <Text style={styles.distanceText}>
-            {MOCK_STATS.mesafe}
-            <Text style={styles.distanceSep}> · </Text>
-            {MOCK_STATS.sure}
+            OSRM entegrasyonu bekleniyor
           </Text>
         </View>
 
@@ -278,6 +348,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   badgeText: { fontSize: 10, fontWeight: '700', color: '#fff' },
+
+  // Deprem marker
+  earthquakeMarker: {
+    backgroundColor: Colors.error,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)',
+  },
+  earthquakeMag: { fontSize: 9, fontWeight: '700', color: '#fff' },
+
+  // Toplanma alanı marker
+  safeAreaMarker: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: Colors.success,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.5)',
+  },
 
   // Konum marker
   myLocationMarker: {

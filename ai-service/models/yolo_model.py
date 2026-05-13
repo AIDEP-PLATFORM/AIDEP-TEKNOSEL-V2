@@ -38,6 +38,8 @@ CLASS_DAMAGE_SCORES: dict[int, float] = {
 ROAD_CLASSES     = {4, 5, 6, 7, 8, 9, 10}
 BUILDING_CLASSES = {0, 1, 2, 3}
 
+CONFIDENCE_THRESHOLD = 0.5
+
 OBJECT_NAME    = "yolov8m_damage.pt"
 LOCAL_FALLBACK = WEIGHTS_DIR / OBJECT_NAME
 
@@ -46,37 +48,41 @@ _model = None
 
 def _load_sync(model_path: Path) -> None:
     global _model
-    try:
-        from ultralytics import YOLO  # type: ignore[import]
-        _model = YOLO(str(model_path))
-        logger.info("YOLOv8 modeli yüklendi: %s (%d sınıf)", model_path, len(CLASS_NAMES))
-    except ImportError:
-        logger.warning("ultralytics yüklü değil. Mock mod aktif.")
-    except Exception as exc:
-        logger.error("YOLOv8 yükleme hatası: %s", exc)
-        _model = None
+    from ultralytics import YOLO  # type: ignore[import]
+    _model = YOLO(str(model_path))
+    logger.info("YOLOv8 modeli yüklendi: %s (%d sınıf)", model_path, len(CLASS_NAMES))
 
 
 async def load_yolo() -> None:
-    # 1) MinIO'dan indir
     minio_path = WEIGHTS_DIR / OBJECT_NAME
-    ok = await download_model(OBJECT_NAME, minio_path)
 
+    # 1) Zaten cache'liyse tekrar indirme (reload döngüsünü önler)
+    if minio_path.exists():
+        logger.info("Model cache'den yükleniyor: %s", minio_path)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _load_sync, minio_path)
+        return
+
+    # 2) MinIO'dan indir
+    ok = await download_model(OBJECT_NAME, minio_path)
     if ok and minio_path.exists():
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, _load_sync, minio_path)
         return
 
-    # 2) Yerel weights/ fallback
+    # 3) Yerel weights/ fallback (bind-mount)
     if LOCAL_FALLBACK.exists():
-        logger.warning("MinIO'da model yok — yerel dosya kullanılıyor: %s", LOCAL_FALLBACK)
+        logger.info("MinIO'da model yok — yerel dosya kullanılıyor: %s", LOCAL_FALLBACK)
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, _load_sync, LOCAL_FALLBACK)
-        # Yerel modeli MinIO'ya yedekle (ilk kurulum)
         await upload_model(LOCAL_FALLBACK, OBJECT_NAME)
         return
 
-    logger.warning("YOLOv8 model dosyası bulunamadı. Mock mod aktif.")
+    raise RuntimeError(
+        f"YOLOv8 model dosyası bulunamadı. "
+        f"'{OBJECT_NAME}' dosyasını MinIO 'ai-models' bucket'ına veya "
+        f"./ai-service/weights/ dizinine koyun."
+    )
 
 
 def is_yolo_loaded() -> bool:
@@ -85,7 +91,7 @@ def is_yolo_loaded() -> bool:
 
 def predict_sync(image_bytes: bytes) -> list[dict]:
     if _model is None:
-        return _mock_predict()
+        raise RuntimeError("YOLOv8 modeli yüklenmedi")
     try:
         from PIL import Image  # type: ignore[import]
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -96,33 +102,19 @@ def predict_sync(image_bytes: bytes) -> list[dict]:
                 class_id = int(box.cls.item())
                 if class_id >= len(CLASS_NAMES):
                     continue
+                confidence = round(float(box.conf.item()), 4)
+                if confidence < CONFIDENCE_THRESHOLD:
+                    continue
                 detections.append({
                     "class_id":    class_id,
                     "class_name":  CLASS_NAMES[class_id],
-                    "confidence":  round(float(box.conf.item()), 4),
+                    "confidence":  confidence,
                     "bbox":        [round(v, 2) for v in box.xyxy[0].tolist()],
                     "damage_score": CLASS_DAMAGE_SCORES[class_id],
                 })
         return detections
+    except RuntimeError:
+        raise
     except Exception as exc:
         logger.error("YOLOv8 inference hatası: %s", exc, exc_info=True)
-        return _mock_predict()
-
-
-def _mock_predict() -> list[dict]:
-    return [
-        {
-            "class_id": 5,
-            "class_name": "yol_cok_hasarli",
-            "confidence": 0.87,
-            "bbox": [102.0, 98.0, 210.0, 195.0],
-            "damage_score": 0.80,
-        },
-        {
-            "class_id": 1,
-            "class_name": "bina_riskli",
-            "confidence": 0.73,
-            "bbox": [50.0, 55.0, 148.0, 160.0],
-            "damage_score": 0.50,
-        },
-    ]
+        raise

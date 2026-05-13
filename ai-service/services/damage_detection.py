@@ -7,7 +7,6 @@ from core.redis import get_redis
 from core.mongodb import get_collection
 from models.yolo_model import (
     predict_sync,
-    is_yolo_loaded,
     ROAD_CLASSES,
     BUILDING_CLASSES,
     CLASS_DAMAGE_SCORES,
@@ -71,7 +70,7 @@ async def _save_to_mongodb(
             "damage_score": round(damage_score * 100, 2),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "multi_confirm_count": multi_confirm_count,
-            "model_source": "yolov8" if is_yolo_loaded() else "mock",
+            "model_source": "yolov8m",
         }
         await collection.insert_one(doc)
     except Exception as exc:
@@ -123,7 +122,7 @@ async def analyze_photo(
         grid_confirmed_count=count,
         grid_aggregated_score=aggregated,
         is_confirmed=is_confirmed,
-        model_source="yolov8m" if is_yolo_loaded() else "mock",
+        model_source="yolov8m",
     )
 
 
@@ -132,18 +131,39 @@ async def get_damage_map() -> list[dict]:
     pattern = "ai:grid:*:scores"
     keys = await redis.keys(pattern)
 
-    cells = []
+    valid_keys = []
+    valid_coords = []
     for key in keys:
         parts = key.split(":")
         if len(parts) != 5:
             continue
-        lat, lon = float(parts[2]), float(parts[3])
-        scores_raw = await redis.lrange(key, 0, -1)
-        scores = [float(s) for s in scores_raw]
+        try:
+            lat, lon = float(parts[2]), float(parts[3])
+        except ValueError:
+            logger.warning("Geçersiz grid key formatı: %s", key)
+            continue
+        valid_keys.append(key)
+        valid_coords.append((lat, lon, parts[2], parts[3]))
+
+    if not valid_keys:
+        return []
+
+    pipe = redis.pipeline()
+    for key in valid_keys:
+        pipe.lrange(key, 0, -1)
+    all_scores_raw = await pipe.execute()
+
+    cells = []
+    for (lat, lon, lat_str, lon_str), scores_raw in zip(valid_coords, all_scores_raw):
+        try:
+            scores = [float(s) for s in scores_raw]
+        except ValueError:
+            logger.warning("Geçersiz skor verisi, grid cell atlandı: %s:%s", lat_str, lon_str)
+            continue
         count = len(scores)
         aggregated = round(sum(scores) / count, 4) if scores else 0.0
         cells.append({
-            "grid_cell_id": f"{parts[2]}:{parts[3]}",
+            "grid_cell_id": f"{lat_str}:{lon_str}",
             "latitude": lat,
             "longitude": lon,
             "aggregated_score": aggregated,
@@ -160,5 +180,8 @@ async def get_grid_score(latitude: float, longitude: float) -> float:
     scores_raw = await redis.lrange(f"ai:grid:{cell_id}:scores", 0, -1)
     if not scores_raw:
         return 0.0
-    scores = [float(s) for s in scores_raw]
+    try:
+        scores = [float(s) for s in scores_raw]
+    except ValueError:
+        return 0.0
     return round(sum(scores) / len(scores), 4)
