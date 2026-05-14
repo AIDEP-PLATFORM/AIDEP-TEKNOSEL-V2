@@ -1,16 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Box, Flex, Grid, Text, Stack, Spinner, useToast } from '@chakra-ui/react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate, useParams } from 'react-router-dom'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { getRole } from '@/utils/auth'
 import {
   apiGetRequest, apiCancelRequest, apiUpdateAssignmentStatus, apiCalculateRoute,
-  apiGetRequestPhotos,
+  apiGetRequestPhotos, apiManualAssign,
   type HelpRequestResponse, type NeedType, type RequestStatus, type AssignmentStatus,
   type RouteStep, type RouteCalculationResult, type DamagePhotoItem,
 } from '@/services/requestService'
+import { apiGetTeams, type TeamResponse } from '@/services/teamService'
 
 const MotionBox = motion(Box)
 const MotionFlex = motion(Flex)
@@ -304,6 +305,12 @@ export default function RequestDetailPage() {
   const [photosLoading, setPhotosLoading] = useState(false)
   const [selectedPhoto, setSelectedPhoto] = useState<DamagePhotoItem | null>(null)
 
+  // Ekip atama
+  const [teams, setTeams]               = useState<TeamResponse[]>([])
+  const [showTeamPicker, setShowTeamPicker] = useState(false)
+  const [loadingTeams, setLoadingTeams]  = useState(false)
+  const [assigningTeam, setAssigningTeam] = useState<string | null>(null)
+
   const load = useCallback(async () => {
     if (!id) { setNotFound(true); setLoading(false); return }
     try {
@@ -400,6 +407,38 @@ export default function RequestDetailPage() {
     }
   }
 
+  const handleOpenTeamPicker = async () => {
+    if (showTeamPicker) { setShowTeamPicker(false); return }
+    setLoadingTeams(true)
+    setShowTeamPicker(true)
+    try {
+      setTeams(await apiGetTeams())
+    } catch {
+      toast({ title: 'Ekipler yüklenemedi', status: 'error', duration: 3000 })
+    } finally {
+      setLoadingTeams(false)
+    }
+  }
+
+  const handleAssignTeam = async (team: TeamResponse) => {
+    if (!request) return
+    setAssigningTeam(team.id)
+    try {
+      await apiManualAssign(request.id, team.id)
+      toast({
+        title: 'Ekip atandı',
+        description: `${team.name} ekibi göreve atandı`,
+        status: 'success', duration: 3000, isClosable: true,
+      })
+      setShowTeamPicker(false)
+      load()
+    } catch (err: any) {
+      toast({ title: err?.response?.data?.detail ?? 'Atama başarısız', status: 'error', duration: 3000 })
+    } finally {
+      setAssigningTeam(null)
+    }
+  }
+
   if (loading) {
     return (
       <Flex h="60vh" align="center" justify="center">
@@ -427,6 +466,7 @@ export default function RequestDetailPage() {
   const urgCfg = urgencyLabel(request.urgency_level)
   const isAdmin = role === 'ADMIN' || role === 'NGO_MANAGER' || role === 'OFFICIAL_MANAGER'
   const canCancelRequest = isAdmin && (request.status === 'PENDING' || request.status === 'SCORED')
+  const canAssignTeam    = isAdmin && (request.status === 'PENDING' || request.status === 'SCORED')
   const assignment = request.assignment
 
   return (
@@ -832,6 +872,91 @@ export default function RequestDetailPage() {
                   loading={actionLoading === 'COMPLETED'}
                   onClick={() => handleAssignmentStatus('COMPLETED')}
                 />
+              )}
+
+              {/* Ekip Ata — PENDING/SCORED + yönetici */}
+              {canAssignTeam && (
+                <Box>
+                  <ActionButton
+                    label={showTeamPicker ? '✕ Ekip Seçimini Kapat' : '👥 Ekip Ata'}
+                    color="#a78bfa" bg="rgba(167,139,250,0.1)" border="rgba(167,139,250,0.25)"
+                    onClick={handleOpenTeamPicker}
+                  />
+
+                  <AnimatePresence>
+                    {showTeamPicker && (
+                      <MotionBox
+                        key="team-picker"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 } as any}
+                        overflow="hidden"
+                        mt={2}
+                      >
+                        <Box borderRadius="xl" bg="rgba(167,139,250,0.05)"
+                          border="1px solid rgba(167,139,250,0.2)" overflow="hidden">
+                          {loadingTeams ? (
+                            <Flex justify="center" align="center" py={4} gap={2}>
+                              <Spinner size="xs" color="#a78bfa" />
+                              <Text fontSize="xs" color="rgba(255,255,255,0.4)">Ekipler yükleniyor...</Text>
+                            </Flex>
+                          ) : teams.length === 0 ? (
+                            <Flex justify="center" align="center" py={4}>
+                              <Text fontSize="xs" color="rgba(255,255,255,0.3)">Kayıtlı ekip yok</Text>
+                            </Flex>
+                          ) : (
+                            <Stack spacing={0}>
+                              {teams.map((team, i) => {
+                                const isLoading = assigningTeam === team.id
+                                return (
+                                  <MotionBox key={team.id}
+                                    initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: i * 0.04, duration: 0.18 } as any}
+                                    px={3} py={2.5}
+                                    borderBottom={i < teams.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none'}
+                                    cursor={assigningTeam ? 'not-allowed' : 'pointer'}
+                                    _hover={{ bg: 'rgba(167,139,250,0.1)' }}
+                                    style={{ transition: 'background 0.12s' }}
+                                    onClick={assigningTeam ? undefined : () => handleAssignTeam(team)}
+                                  >
+                                    <Flex align="center" justify="space-between" gap={2}>
+                                      <Box flex={1} minW={0}>
+                                        <Text fontSize="xs" fontWeight="600" color="white" isTruncated>
+                                          {team.name}
+                                        </Text>
+                                        <Flex align="center" gap={2} mt={0.5}>
+                                          <Text fontSize="9px" color="rgba(255,255,255,0.35)">
+                                            {team.member_count} üye
+                                          </Text>
+                                          {team.active_task_count > 0 && (
+                                            <Box px={1.5} borderRadius="full" bg="rgba(251,191,36,0.15)">
+                                              <Text fontSize="9px" fontWeight="700" color="#fbbf24">
+                                                {team.active_task_count} aktif
+                                              </Text>
+                                            </Box>
+                                          )}
+                                        </Flex>
+                                      </Box>
+                                      {isLoading ? (
+                                        <Spinner size="xs" color="#a78bfa" />
+                                      ) : (
+                                        <Box px={2} py={0.5} borderRadius="md"
+                                          bg="rgba(167,139,250,0.15)" border="1px solid rgba(167,139,250,0.3)">
+                                          <Text fontSize="9px" fontWeight="700" color="#a78bfa">Ata</Text>
+                                        </Box>
+                                      )}
+                                    </Flex>
+                                  </MotionBox>
+                                )
+                              })}
+                            </Stack>
+                          )}
+                        </Box>
+                      </MotionBox>
+                    )}
+                  </AnimatePresence>
+                </Box>
               )}
 
               {/* Admin — İptal Et */}

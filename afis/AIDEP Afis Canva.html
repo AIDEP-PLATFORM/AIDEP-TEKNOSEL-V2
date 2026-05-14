@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <title>AIDEP — Afis 1550×800</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      background: #020812;
+      font-family: Inter, system-ui, sans-serif;
+      width: 100%; height: 100%;
+      overflow: hidden;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .stage {
+      width: 1550px;
+      height: 800px;
+      position: relative;
+      overflow: hidden;
+      flex-shrink: 0;
+      transform-origin: center center;
+    }
+    @page { size: 1550px 800px; margin: 0; }
+    @media print {
+      html, body { width: 1550px; height: 800px; background: none; overflow: visible; }
+      .stage { transform: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <div id="root"></div>
+  </div>
+
+  <script>
+    function scaleStage() {
+      const stage = document.querySelector('.stage');
+      if (!stage) return;
+      const scaleX = window.innerWidth  / 1550;
+      const scaleY = window.innerHeight / 800;
+      const scale  = Math.min(scaleX, scaleY);
+      stage.style.transform = `scale(${scale})`;
+    }
+    window.addEventListener('resize', scaleStage);
+    document.addEventListener('DOMContentLoaded', scaleStage);
+  </script>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+  <script type="text/babel">
+    /* ─── İÇERİK ─────────────────────────────────────────────────────── */
+    const C = {
+      code: "OÜ2662",
+      themeMain: "Yerel Yönetimlerde Akıllı Şehircilik",
+      themeSub: "Doğal Afetler ve Afet Yönetimi",
+      category: "Özel Kategori · Üniversite",
+      stand: "1",
+      name: "AIDEP",
+      acronym: "AI · Disaster · Emergency · Pathfinder",
+      problems: [
+        {
+          title: "Geç müdahale",
+          desc: "Kapalı ve hasarlı yollar nedeniyle ekipler kritik 6–72 saatte enkaza ulaşamıyor.",
+        },
+        {
+          title: "Dinamik veri yok",
+          desc: "Mevcut sistemler yolların anlık durumunu izleyemiyor; ekipler kapalı yolu sahada görüyor.",
+        },
+        {
+          title: "Bütünleşik sistem yok",
+          desc: "Görüntü tabanlı hasar tespitiyle dinamik rotayı birleştiren yerli sistem literatürde yok.",
+        },
+      ],
+      pipeline: [
+        { n: 1, title: "Veri Toplama",  desc: "Vatandaş fotoğrafları ve coğrafi etiketli sosyal medya görüntüleri.", tech: "Mobil · WebSocket" },
+        { n: 2, title: "Hasar Tespiti", desc: "Görüntüler derin öğrenme modeliyle sınıflandırılır, hasar haritasına dönüşür.", tech: "YOLOv8m" },
+        { n: 3, title: "Risk Skorlama", desc: "Grid bazlı coğrafi analiz; her segmente risk puanı hesaplanır.", tech: "XGBoost · PostGIS" },
+        { n: 4, title: "Güvenli Rota",  desc: "Ekipler en güvenli ve hızlı güzergâha gerçek zamanlı yönlendirilir.", tech: "OSRM · Greedy" },
+      ],
+      tech: [
+        { tag: "AI",       desc: "YOLOv8m · XGBoost · Enhanced Greedy · transfer learning" },
+        { tag: "Backend",  desc: "FastAPI · PostgreSQL/PostGIS · Firebase Realtime · WebSocket" },
+        { tag: "Frontend", desc: "React Native (mobil) · React (yönetim paneli)" },
+        { tag: "API",      desc: "AFAD & Kandilli Rasathanesi · OSRM motoru · offline mod" },
+      ],
+      audience: [
+        "Fotoğraf paylaşan vatandaşlar",
+        "Arama-kurtarma ekipleri ve gönüllüler",
+        "STK'lar ve kriz yönetim masaları",
+        "AFAD, UMKE ve belediyeler",
+      ],
+      team: {
+        name: "AYZEK Disaster",
+        members: ["Süleyman YILDIZ", "Enes IŞIK"],
+        advisor: "Dr. Öğr. Üyesi Sema SERVİ",
+      },
+      reference: "6 Şubat 2023 Kahramanmaraş depremi",
+      sponsors: [
+        { src: "assets/ayzek-logo.png",                      alt: "AYZEK" },
+        { src: "assets/teknosel-logo.png",                   alt: "Teknosel" },
+        { src: "assets/selcuklu-belediyesi.png",             alt: "Selçuklu Belediyesi" },
+        { src: "assets/selcuk-teknoloji-fakultesi.png",      alt: "Selçuk Üniv. Teknoloji Fakültesi" },
+        { src: "assets/innopark-logo.png",                   alt: "InnoPark Konya" },
+      ],
+    };
+
+    /* ─── İKONLAR ────────────────────────────────────────────────────── */
+    function Icon({ name, size = 16, stroke = 1.8 }) {
+      const p = { width: size, height: size, viewBox: "0 0 24 24", fill: "none",
+        stroke: "currentColor", strokeWidth: stroke, strokeLinecap: "round", strokeLinejoin: "round" };
+      const icons = {
+        warn:      <svg {...p}><path d="M12 3 L22 20 H2 Z"/><path d="M12 10 V14"/><circle cx="12" cy="17.2" r="1" fill="currentColor" stroke="none"/></svg>,
+        broadcast: <svg {...p}><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"/><path d="M8.5 8.5 C 6 11 6 13 8.5 15.5"/><path d="M15.5 8.5 C 18 11 18 13 15.5 15.5"/><path d="M5.5 5.5 C 2 9 2 15 5.5 18.5" opacity=".55"/><path d="M18.5 5.5 C 22 9 22 15 18.5 18.5" opacity=".55"/></svg>,
+        blocks:    <svg {...p}><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="currentColor" stroke="none" opacity=".35"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 17.5 H21"/><path d="M17.5 14 V21"/></svg>,
+        camera:    <svg {...p}><rect x="3" y="7" width="18" height="13" rx="2"/><circle cx="12" cy="13.5" r="3.6"/><circle cx="12" cy="13.5" r="1.2" fill="currentColor" stroke="none"/><path d="M8 7 L9.5 4 H14.5 L16 7"/></svg>,
+        brain:     <svg {...p}><path d="M9.5 5 C 7 5 5.5 7 6 9 C 4 10 4 13 6 14 C 6 16.5 8.5 18 10.5 17 C 11 18 12 18.5 12 18.5 V5.5 C 11.5 5 10.5 4.8 9.5 5 Z"/><path d="M14.5 5 C 17 5 18.5 7 18 9 C 20 10 20 13 18 14 C 18 16.5 15.5 18 13.5 17 C 13 18 12 18.5 12 18.5"/><circle cx="9" cy="10" r=".8" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r=".8" fill="currentColor" stroke="none"/><path d="M8.5 13 H 10.5"/><path d="M13.5 13 H 15.5"/></svg>,
+        grid:      <svg {...p}><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1" fill="currentColor" stroke="none" opacity=".4"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1" fill="currentColor" stroke="none" opacity=".7"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
+        route:     <svg {...p}><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="6" r=".9" fill="currentColor" stroke="none"/><path d="M18 18 C 18 16.3 19.3 15 21 15"/><path d="M21 18 L18 21 L15 18" fill="currentColor" stroke="none"/><path d="M6 8.5 C 6 12 9 12 11 12 C 14 12 17 12 18 15.5" strokeDasharray="2 2"/></svg>,
+        user:      <svg {...p}><circle cx="12" cy="8.5" r="3.5"/><path d="M4.5 21 C 4.5 16, 19.5 16, 19.5 21"/></svg>,
+        shield:    <svg {...p}><path d="M12 2.5 L4 6.5 V12.5 C4 17 7.8 20.5 12 21.5 C16.2 20.5 20 17 20 12.5 V6.5 Z"/><path d="M8.5 12 L11 14.3 L15.5 9.5"/></svg>,
+        ngo:       <svg {...p}><path d="M3 21 V10 L12 4 L21 10 V21 Z"/><path d="M3 21 H21"/><rect x="9.5" y="14" width="5" height="7"/><circle cx="12" cy="10" r=".8" fill="currentColor" stroke="none"/></svg>,
+        city:      <svg {...p}><path d="M3 21 V8 L9 5 V21"/><path d="M9 21 V11 L21 11 V21"/><path d="M3 21 H21"/><rect x="12.5" y="14" width="2" height="2.5"/><rect x="16.5" y="14" width="2" height="2.5"/><rect x="12.5" y="17.5" width="2" height="2.5"/><rect x="16.5" y="17.5" width="2" height="2.5"/></svg>,
+      };
+      return icons[name] || null;
+    }
+
+    /* ─── SPONSOR ŞERIDI ─────────────────────────────────────────────── */
+    function SponsorRow() {
+      return (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+          {C.sponsors.map((s) => (
+            <div key={s.alt} style={{
+              height: 58, width: 90,
+              background: "rgba(255,255,255,.96)",
+              border: "1px solid rgba(0,0,0,.06)",
+              borderRadius: 10, padding: "5px 10px",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 4px 14px rgba(0,0,0,.25)",
+              flexShrink: 0,
+            }}>
+              <img src={s.src} alt={s.alt} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    /* ─── ANA AFİŞ ───────────────────────────────────────────────────── */
+    const css = `
+      .v6 {
+        --bg-0:#04101e; --bg-1:#071a30; --bg-2:#0c2a4a; --bg-3:#0f3a6a;
+        --card:#0d2540; --card-2:#102d4d; --card-3:#143557;
+        --ink:#eaf5ff; --muted:#9fc0dc; --mute2:#6e8fae;
+        --cyan:#2bd4ff; --cyan-2:#7fe3ff; --cyan-3:#0fa9d8;
+        --amber:#ff9a3c; --amber-2:#ffc275; --red:#ff5a5a;
+        --line: rgba(255,255,255,.08);
+        width:1550px; height:800px; position:relative; overflow:hidden;
+        font-family: Inter, "Helvetica Neue", Arial, sans-serif;
+        color:var(--ink);
+        background:
+          radial-gradient(ellipse 800px 500px at 18% 25%, rgba(43,212,255,.18), transparent 60%),
+          radial-gradient(ellipse 700px 500px at 90% 95%, rgba(255,154,60,.10), transparent 60%),
+          linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 35%, var(--bg-2) 75%, var(--bg-3) 100%);
+      }
+      .v6::before {
+        content:""; position:absolute; inset:0; pointer-events:none;
+        background-image:
+          radial-gradient(ellipse 65% 45% at 22% 35%, transparent 26%, rgba(43,212,255,.06) 26.5%, transparent 28.5%),
+          radial-gradient(ellipse 65% 45% at 22% 35%, transparent 38%, rgba(43,212,255,.05) 38.5%, transparent 40%),
+          radial-gradient(ellipse 65% 45% at 22% 35%, transparent 50%, rgba(43,212,255,.04) 50.5%, transparent 52%),
+          radial-gradient(ellipse 60% 50% at 78% 70%, transparent 24%, rgba(255,154,60,.05) 24.5%, transparent 26.5%),
+          radial-gradient(ellipse 60% 50% at 78% 70%, transparent 36%, rgba(255,154,60,.04) 36.5%, transparent 38%);
+      }
+      .v6::after {
+        content:""; position:absolute; inset:0; pointer-events:none;
+        background-image:
+          linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px),
+          linear-gradient(0deg, rgba(255,255,255,.02) 1px, transparent 1px);
+        background-size: 60px 60px;
+      }
+
+      /* ── Üst Bar ── */
+      .v6 .topbar { position:absolute; left:36px; right:36px; top:28px; height:54px;
+        display:flex; align-items:center; justify-content:space-between; gap:14px; z-index:5; }
+      .v6 .tema { font-size:11.5px; letter-spacing:.18em; color:var(--muted); text-transform:uppercase; }
+      .v6 .tema b { color:var(--cyan-2); font-weight:800; }
+      .v6 .catpill { background: linear-gradient(135deg, var(--amber) 0%, #e67a1c 100%);
+        color:#1a0a00; padding:9px 16px; font-size:11.5px; letter-spacing:.22em; font-weight:800;
+        border-radius:999px; box-shadow: 0 6px 14px rgba(255,154,60,.35); text-transform:uppercase; }
+      .v6 .numbadge { width:52px; height:52px; border-radius:50%; background: var(--card-3);
+        border:2px solid var(--cyan); color:var(--cyan-2);
+        display:flex; align-items:center; justify-content:center; font-size:24px; font-weight:900;
+        box-shadow: 0 0 0 4px rgba(43,212,255,.12), 0 6px 14px rgba(0,0,0,.4); }
+
+      /* ── Gövde ── */
+      .v6 .body { position:absolute; inset:100px 36px 108px 36px;
+        display:grid; grid-template-columns: 0.9fr 1.7fr; gap:22px; }
+
+      /* ── Sol: Hero ── */
+      .v6 .hero { background: linear-gradient(160deg, var(--card) 0%, var(--bg-1) 100%);
+        border:1px solid var(--line); border-radius:18px; padding:22px 26px;
+        display:flex; flex-direction:column; gap:12px; position:relative; overflow:hidden; }
+      .v6 .hero::before { content:""; position:absolute; width:520px; height:520px; border-radius:50%;
+        top:-200px; right:-220px; background: radial-gradient(circle, rgba(43,212,255,.22), transparent 60%); }
+
+      .v6 .logo-wrap { width:108px; height:108px; margin:0 auto 2px; position:relative;
+        display:flex; align-items:center; justify-content:center; }
+      .v6 .logo-wrap::before, .v6 .logo-wrap::after { content:""; position:absolute; border-radius:50%;
+        border:1.5px solid rgba(43,212,255,.35); }
+      .v6 .logo-wrap::before { inset:-10px; }
+      .v6 .logo-wrap::after  { inset:-22px; border-color: rgba(43,212,255,.18); }
+      .v6 .logo-wrap img { width:100%; height:100%; object-fit:contain;
+        filter: drop-shadow(0 8px 18px rgba(43,212,255,.5)); }
+
+      .v6 .proj-name { font-size:78px; font-weight:900; line-height:.9; letter-spacing:-.02em;
+        text-align:center; background: linear-gradient(180deg, #fff 0%, #b5e7ff 100%);
+        -webkit-background-clip:text; background-clip:text; color:transparent;
+        margin-top: 14px; }
+      .v6 .acronym { font-size:11px; font-weight:700; color:var(--cyan-2);
+        letter-spacing:.22em; margin-top:6px; text-transform:uppercase; text-align:center; }
+
+      .v6 .hero-title { font-size:20px; font-weight:800; line-height:1.25; margin-top:6px; }
+      .v6 .hero-title b { color:var(--cyan-2); }
+      .v6 .lede { font-size:12.5px; line-height:1.55; color:var(--muted); }
+      .v6 .lede b { color:#fff; }
+
+      .v6 .stats { display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:auto; }
+      .v6 .stat { background: rgba(43,212,255,.08); border:1px solid rgba(43,212,255,.25);
+        border-radius:12px; padding:10px 12px; }
+      .v6 .stat .num { font-size:26px; font-weight:900; color:var(--cyan-2); line-height:1; letter-spacing:-.02em; }
+      .v6 .stat .num small { font-size:12px; color:var(--ink); font-weight:700; }
+      .v6 .stat .lab { font-size:10px; color:var(--muted); margin-top:5px; line-height:1.35; letter-spacing:.02em; }
+
+      /* ── Sağ sütun ── */
+      .v6 .right { display:grid; grid-template-rows: auto auto 1fr; gap:14px; }
+
+      /* Problemler */
+      .v6 .problems { background: var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; }
+      .v6 .ph { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+      .v6 .ph .lbl { font-size:11px; letter-spacing:.28em; font-weight:800; text-transform:uppercase; color:var(--amber); }
+      .v6 .ph .ref { margin-left:auto; font-size:10.5px; color:var(--mute2); letter-spacing:.04em; }
+      .v6 .ph .ref b { color:var(--amber-2); font-weight:800; }
+      .v6 .pgrid { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
+      .v6 .pcell { display:flex; gap:10px; align-items:flex-start; padding:10px 11px;
+        background: rgba(255,90,90,.06); border:1px solid rgba(255,90,90,.18); border-radius:11px; }
+      .v6 .pcell .ic { width:44px; height:44px; border-radius:12px; flex-shrink:0;
+        background: linear-gradient(135deg, rgba(255,154,60,.35) 0%, rgba(230,122,28,.18) 100%);
+        border: 1px solid rgba(255,154,60,.45); color:var(--amber-2);
+        display:flex; align-items:center; justify-content:center;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 4px 12px rgba(255,154,60,.18), 0 0 0 4px rgba(255,154,60,.05); }
+      .v6 .pcell h5 { margin:0 0 2px; font-size:12.5px; font-weight:800; color:#fff; line-height:1.15; }
+      .v6 .pcell p  { margin:0; font-size:10.5px; color:var(--muted); line-height:1.4; }
+
+      /* Pipeline */
+      .v6 .pipeline { background: linear-gradient(135deg, var(--card-2) 0%, var(--card-3) 100%);
+        border:1px solid rgba(43,212,255,.2); border-radius:14px; padding:14px 16px; }
+      .v6 .pipe-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+      .v6 .pipe-head .lbl { font-size:11px; letter-spacing:.28em; font-weight:800; text-transform:uppercase; color:var(--cyan-2); }
+      .v6 .pipe-head .ttl { font-size:13px; font-weight:800; color:#fff; }
+      .v6 .pipe-head .ref { margin-left:auto; font-size:10.5px; color:var(--mute2); letter-spacing:.04em; }
+      .v6 .pipe-head .ref b { color:var(--cyan-2); font-weight:800; }
+      .v6 .flow { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; }
+      .v6 .step { background: rgba(255,255,255,.04); border:1px solid rgba(43,212,255,.22);
+        border-radius:11px; padding:11px; position:relative; display:flex; gap:11px; align-items:flex-start; }
+      .v6 .step .icnum { position:relative; flex-shrink:0; }
+      .v6 .step .ictile { width:42px; height:42px; border-radius:11px;
+        background: linear-gradient(135deg, rgba(43,212,255,.30) 0%, rgba(15,169,216,.15) 100%);
+        border: 1px solid rgba(43,212,255,.5); color:#cdf2ff;
+        display:flex; align-items:center; justify-content:center;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 4px 12px rgba(43,212,255,.22), 0 0 0 4px rgba(43,212,255,.06); }
+      .v6 .step .badge { position:absolute; top:-7px; right:-7px;
+        width:20px; height:20px; border-radius:50%;
+        background: linear-gradient(135deg, var(--cyan), var(--cyan-3));
+        color:#001220; display:flex; align-items:center; justify-content:center;
+        font-size:11px; font-weight:900;
+        box-shadow: 0 0 0 2px var(--card-2), 0 2px 6px rgba(0,0,0,.4); }
+      .v6 .step h5 { margin:0 0 2px; font-size:12px; font-weight:800; color:#fff; line-height:1.15; }
+      .v6 .step p  { margin:0; font-size:10px; color:var(--muted); line-height:1.4; }
+      .v6 .step .tech { display:inline-block; margin-top:6px; font-size:9px; padding:2px 6px;
+        border-radius:5px; background: rgba(43,212,255,.14); color:var(--cyan-2);
+        font-weight:800; letter-spacing:.06em; }
+      .v6 .step:not(:last-child)::after { content:""; position:absolute; right:-9px; top:50%;
+        transform: translateY(-50%); width:0; height:0;
+        border-left:8px solid var(--cyan); border-top:6px solid transparent; border-bottom:6px solid transparent;
+        filter: drop-shadow(0 0 4px rgba(43,212,255,.5)); }
+
+      /* Alt 3'lü grid */
+      .v6 .bgrid { display:grid; grid-template-columns: 1fr 0.85fr 1.15fr; gap:14px; }
+      .v6 .panel { background: var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 16px; }
+      .v6 .ph-h  { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+      .v6 .ph-h .lbl { font-size:11px; letter-spacing:.28em; font-weight:800; text-transform:uppercase; color:var(--cyan-2); }
+
+      /* Teknoloji satırları */
+      .v6 .trow { display:flex; align-items:center; gap:10px; padding:7px 10px;
+        background: rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06); border-radius:9px;
+        margin-bottom:7px; }
+      .v6 .trow:last-child { margin-bottom:0; }
+      .v6 .trow .tag { font-size:9.5px; padding:3px 7px; border-radius:4px;
+        background: rgba(43,212,255,.16); color:var(--cyan-2); font-weight:800;
+        letter-spacing:.06em; min-width:60px; text-align:center; flex-shrink:0; }
+      .v6 .trow .tag.amber { background: rgba(255,154,60,.18); color: var(--amber-2); }
+      .v6 .trow .desc { font-size:11px; color:var(--ink); line-height:1.3; }
+
+      /* Hedef kitle satırları */
+      .v6 .urow { display:flex; align-items:center; gap:10px; padding:6px 10px;
+        background: rgba(43,212,255,.06); border:1px solid rgba(43,212,255,.18); border-radius:9px;
+        margin-bottom:6px; }
+      .v6 .urow:last-child { margin-bottom:0; }
+      .v6 .urow .uic { width:34px; height:34px; border-radius:10px; flex-shrink:0;
+        background: linear-gradient(135deg, rgba(43,212,255,.30) 0%, rgba(15,169,216,.15) 100%);
+        border: 1px solid rgba(43,212,255,.40); color:var(--cyan-2);
+        display:flex; align-items:center; justify-content:center;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 3px 10px rgba(43,212,255,.18); }
+      .v6 .urow .ut { font-size:11px; color:var(--ink); line-height:1.3; font-weight:600; }
+
+      /* Uygulama ekranları */
+      .v6 .apppanel { background: linear-gradient(160deg, rgba(43,212,255,.05), rgba(43,212,255,.02));
+        border:1px solid rgba(43,212,255,.20); display:flex; flex-direction:column; }
+      .v6 .appgrid { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; flex:1; min-height:0; }
+      .v6 .appslot { display:flex; flex-direction:column; gap:6px; }
+      .v6 .appimg { width:100%; flex:1; min-height:160px; border-radius:14px;
+        box-shadow: 0 8px 20px rgba(0,0,0,.45), inset 0 0 0 2px rgba(43,212,255,.4), 0 0 0 5px rgba(43,212,255,.08);
+        overflow:hidden; background:#06192e; }
+      .v6 .appimg img { width:100%; height:100%; object-fit:cover; display:block; }
+      .v6 .cap { font-size:11px; color:#fff; font-weight:700; text-align:center;
+        line-height:1.25; padding:4px 0; }
+
+      /* Footer */
+      .v6 .footer { position:absolute; left:0; right:0; bottom:0; height:96px;
+        background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0,0,0,.4));
+        padding:0 30px;
+        display:flex; align-items:center; gap:18px; overflow:hidden; }
+      .v6 .footer .foot-text { display:grid; grid-template-columns: 1fr 1fr; gap:18px; flex:1; min-width:0; }
+      .v6 .foot-block { line-height:1.5; color:var(--muted); font-size:12px; }
+      .v6 .foot-block b { color:#fff; font-weight:800; }
+      .v6 .foot-block .accent { color:var(--cyan-2); font-weight:800; }
+    `;
+
+    const PIPE_ICONS = ["camera", "brain", "grid", "route"];
+    const PROB_ICONS = ["warn", "broadcast", "blocks"];
+    const AUD_ICONS  = ["user", "shield", "ngo", "city"];
+
+    function Poster() {
+      return (
+        <div className="poster v6">
+          <style>{css}</style>
+
+          {/* ── Üst bar ── */}
+          <div className="topbar">
+            <div className="tema">
+              Tema: <b>{C.themeMain}</b> · Konu: <b>{C.themeSub}</b>
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <div className="catpill">{C.category}</div>
+              <div className="numbadge">{C.stand}</div>
+            </div>
+          </div>
+
+          {/* ── Gövde ── */}
+          <div className="body">
+
+            {/* Sol: Hero */}
+            <section className="hero">
+              <div>
+                <div className="logo-wrap">
+                  <img src="assets/aidep-logo-transparent.png" alt="AIDEP" />
+                </div>
+                <div className="proj-name">{C.name}</div>
+                <div className="acronym">{C.acronym}</div>
+              </div>
+
+              <div className="hero-title">
+                Büyük depremlerin <b>kritik 6–72 saatinde</b> yardım ekiplerini güvenli rotaya yönlendiren yapay zekâ destekli afet yönetim platformu.
+              </div>
+
+              <p className="lede">
+                AIDEP iki fazlı çalışır: <b>deprem öncesi</b> STK ve kurumlara dijital tatbikat simülasyonları, <b>deprem sonrası</b> ise hasar tespiti → coğrafi analiz → risk skorlama → rota optimizasyonu adımlarından oluşan dört aşamalı AI pipeline'ı sunar.
+              </p>
+
+              <div className="stats">
+                <div className="stat">
+                  <div className="num">%60 → <small>%10</small></div>
+                  <div className="lab">Kahramanmaraş simülasyonu — riskli yol segmentlerinin oranı AIDEP rotalamasıyla <b>%60'tan %10'un altına</b> düşer.</div>
+                </div>
+                <div className="stat">
+                  <div className="num">%83 <small>mAP@50</small></div>
+                  <div className="lab">YOLOv8m modelinin hasar tespitinde hedeflenen doğruluk seviyesi.</div>
+                </div>
+              </div>
+            </section>
+
+            {/* Sağ sütun */}
+            <section className="right">
+
+              {/* Çözülen Problemler */}
+              <div className="problems">
+                <div className="ph">
+                  <div className="lbl">Çözülen Problem</div>
+                  <div className="ref">Referans: <b>{C.reference}</b></div>
+                </div>
+                <div className="pgrid">
+                  {C.problems.map((p, i) => (
+                    <div className="pcell" key={i}>
+                      <div className="ic">
+                        <Icon name={PROB_ICONS[i]} size={22} stroke={1.8} />
+                      </div>
+                      <div>
+                        <h5>{p.title}</h5>
+                        <p>{p.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Pipeline */}
+              <div className="pipeline">
+                <div className="pipe-head">
+                  <div className="lbl">Çözüm</div>
+                  <div className="ttl">Dört Aşamalı Yapay Zekâ Pipeline'ı</div>
+                  <div className="ref">Hedef: müdahale süresi <b>ölçülebilir</b> oranda kısalır</div>
+                </div>
+                <div className="flow">
+                  {C.pipeline.map((s, i) => (
+                    <div className="step" key={s.n}>
+                      <div className="icnum">
+                        <div className="ictile">
+                          <Icon name={PIPE_ICONS[i]} size={22} stroke={1.8} />
+                        </div>
+                        <div className="badge">{s.n}</div>
+                      </div>
+                      <div>
+                        <h5>{s.title}</h5>
+                        <p>{s.desc}</p>
+                        <span className="tech">{s.tech}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Alt 3'lü grid */}
+              <div className="bgrid">
+
+                {/* Teknoloji */}
+                <div className="panel">
+                  <div className="ph-h"><div className="lbl">Teknoloji Yığını</div></div>
+                  {C.tech.map((t, i) => (
+                    <div className="trow" key={i}>
+                      <div className={"tag" + (i === 3 ? " amber" : "")}>{t.tag}</div>
+                      <div className="desc">{t.desc}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Hedef Kitle */}
+                <div className="panel">
+                  <div className="ph-h"><div className="lbl">Hedef Kitle</div></div>
+                  {C.audience.map((u, i) => (
+                    <div className="urow" key={i}>
+                      <div className="uic">
+                        <Icon name={AUD_ICONS[i]} size={17} stroke={1.8} />
+                      </div>
+                      <div className="ut">{u}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Uygulama Ekranları */}
+                <div className="panel apppanel">
+                  <div className="ph-h"><div className="lbl">Uygulamadan Görüntüler</div></div>
+                  <div className="appgrid">
+                    <div className="appslot">
+                      <div className="appimg"><img src="assets/v6-app-1.png" alt="Ekran 1" /></div>
+                      <div className="cap">Hasar Raporlama</div>
+                    </div>
+                    <div className="appslot">
+                      <div className="appimg"><img src="assets/v6-app-2.png" alt="Ekran 2" /></div>
+                      <div className="cap">Deprem Haritası</div>
+                    </div>
+                    <div className="appslot">
+                      <div className="appimg"><img src="assets/v6-app-3.png" alt="Ekran 3" /></div>
+                      <div className="cap">Güvenli Rota</div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </section>
+          </div>
+
+          {/* ── Footer ── */}
+          <footer className="footer">
+            <div className="foot-text">
+              <div className="foot-block">
+                <div><b>Takım Adı:</b> {C.team.name}</div>
+                <div><b>Takım Üyeleri:</b> {C.team.members.join(" · ")}</div>
+              </div>
+              <div className="foot-block">
+                <div><b>Proje Adı:</b> <span className="accent">{C.name}</span> &nbsp;·&nbsp; <b>Proje No:</b> {C.code}</div>
+                <div><b>Danışman:</b> {C.team.advisor}</div>
+              </div>
+            </div>
+            <SponsorRow />
+          </footer>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<Poster />);
+  </script>
+</body>
+</html>

@@ -7,5 +7,10 @@
     "build": "npm run build --prefix frontend",
     "preview": "npm run preview --prefix frontend",
     "install:frontend": "npm install --prefix frontend"
+  },
+  "dependencies": {
+    "docx": "^9.6.1",
+    "pptxgenjs": "^4.0.1",
+    "puppeteer-core": "^24.43.1"
   }
 }
