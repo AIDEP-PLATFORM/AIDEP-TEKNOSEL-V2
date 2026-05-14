@@ -97,6 +97,19 @@ async def damage_map(
     return await _proxy_get("/ai/damage-map")
 
 
+@router.delete("/damage-map", summary="Tüm hasar verilerini sil (yalnızca admin)")
+async def clear_damage_map(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    if current_user.role.value != "ADMIN":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Yalnızca adminler bu işlemi yapabilir.")
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.delete(f"{_AI_BASE}/ai/damage-map", headers=_AI_HEADERS)
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text)
+    return resp.json()
+
+
 @router.get("/weather-score", summary="Koordinata göre hava durumu ve meteorology_score")
 async def weather_score(
     latitude: float = Query(..., ge=-90, le=90),

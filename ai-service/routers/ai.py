@@ -22,6 +22,7 @@ from pipeline import (
     run_matching,
     get_live_damage_map,
 )
+from services.damage_detection import clear_all_damage_cells
 import pipeline as ai_pipeline
 from schemas.damage import DamageDetectionResponse, DamageMapCell
 from schemas.priority import (
@@ -124,6 +125,15 @@ async def match(payload: MatchPayload) -> MatchResponse:
 async def damage_map() -> list[DamageMapCell]:
     cells_raw = await get_live_damage_map()
     return [DamageMapCell(**c) for c in cells_raw]
+
+
+@router.delete(
+    "/damage-map",
+    summary="Tüm hasar grid verilerini Redis'ten sil (admin)",
+)
+async def clear_damage_map() -> dict:
+    deleted = await clear_all_damage_cells()
+    return {"deleted_keys": deleted, "message": f"{deleted} hasar hücresi silindi"}
 
 
 @router.get(

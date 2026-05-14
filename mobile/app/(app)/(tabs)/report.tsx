@@ -12,6 +12,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { Colors, FontSize, Spacing, BorderRadius } from '@/constants/theme';
+import ScreenTransition from '@/components/ScreenTransition';
 import { aiService } from '@/services/ai.service';
 import { useAuthStore } from '@/store/auth.store';
 import { useDamageStore } from '@/store/damage.store';
@@ -54,6 +55,8 @@ export default function ReportScreen() {
   const insets = useSafeAreaInsets();
   const { openCamera } = useLocalSearchParams<{ openCamera?: string }>();
   const token = useAuthStore((s) => s.tokens?.accessToken);
+  const currentUser = useAuthStore((s) => s.user);
+  const isFieldStaff = currentUser?.role !== 'CITIZEN' && currentUser?.role !== 'VOLUNTEER';
   const addDamageReport = useDamageStore((s) => s.addReport);
 
   const [description, setDescription] = useState('');
@@ -311,7 +314,7 @@ export default function ReportScreen() {
   );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <ScreenTransition style={[styles.container, { paddingTop: insets.top }]}>
 
       {/* ── Sabit üst bölüm ── */}
       <View style={styles.topSection}>
@@ -400,16 +403,18 @@ export default function ReportScreen() {
             </View>
           ) : null}
 
-          <TouchableOpacity
-            style={[styles.photoBtn, { borderColor: Colors.success, flex: undefined }]}
-            onPress={openLocationPicker}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="map-outline" size={18} color={Colors.success} />
-            <Text style={[styles.photoBtnLabel, { color: Colors.success }]}>
-              {selectedLocation ? 'Konumu Değiştir' : 'Haritadan Konum Seç'}
-            </Text>
-          </TouchableOpacity>
+          {isFieldStaff && (
+            <TouchableOpacity
+              style={[styles.photoBtn, { borderColor: Colors.success, flex: undefined }]}
+              onPress={openLocationPicker}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="map-outline" size={18} color={Colors.success} />
+              <Text style={[styles.photoBtnLabel, { color: Colors.success }]}>
+                {selectedLocation ? 'Konumu Değiştir' : 'Haritadan Konum Seç'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Gönder butonu */}
@@ -607,7 +612,7 @@ export default function ReportScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </ScreenTransition>
   );
 }
 

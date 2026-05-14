@@ -4,6 +4,7 @@ import {
   Input, InputGroup, InputLeftElement, Select, Spinner,
   useToast,
 } from '@chakra-ui/react'
+import { apiClearDamageMap } from '@/services/mapService'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   apiCreateOrganization, apiListOrganizations,
@@ -590,6 +591,7 @@ export default function SuperAdminPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [logs, setLogs]               = useState<ActivityLogEntry[]>([])
   const [loadingLogs, setLoadingLogs] = useState(false)
+  const [clearingDamage, setClearingDamage] = useState(false)
 
   const loadUsers = useCallback(async () => {
     setLoadingUsers(true)
@@ -613,6 +615,19 @@ export default function SuperAdminPage() {
         .finally(() => setLoadingLogs(false))
     }
   }, [activeTab, loadUsers])
+
+  const handleClearDamageMap = useCallback(async () => {
+    if (!window.confirm('Tüm hasar verileri silinecek. Emin misiniz?')) return
+    setClearingDamage(true)
+    try {
+      const res = await apiClearDamageMap()
+      toast({ title: `${res.message}`, status: 'success', duration: 4000, isClosable: true })
+    } catch {
+      toast({ title: 'Hasar verisi silinemedi', status: 'error', duration: 3000 })
+    } finally {
+      setClearingDamage(false)
+    }
+  }, [toast])
 
   const handleAction = useCallback(async (
     id: string, action: 'approve' | 'deactivate' | 'activate'
@@ -883,6 +898,38 @@ export default function SuperAdminPage() {
                 </Box>
               </Box>
             </Grid>
+
+            {/* Tehlikeli İşlemler */}
+            <Box mt={6}>
+              <Text fontSize="11px" fontWeight="700" color="rgba(248,113,113,0.6)"
+                letterSpacing="widest" textTransform="uppercase" mb={3}>⚠ Tehlikeli İşlemler</Text>
+              <Box borderRadius="xl" bg="rgba(239,68,68,0.05)" border="1px solid rgba(239,68,68,0.2)" p={4}>
+                <Flex align="center" justify="space-between" gap={4}>
+                  <Box>
+                    <Text fontSize="sm" fontWeight="700" color="white" mb={0.5}>
+                      Tüm Hasar Verilerini Temizle
+                    </Text>
+                    <Text fontSize="xs" color="rgba(255,255,255,0.35)">
+                      Haritadaki tüm hasar grid hücreleri Redis'ten silinir. Test sonrası kullanın.
+                    </Text>
+                  </Box>
+                  <Button
+                    size="sm"
+                    onClick={handleClearDamageMap}
+                    isLoading={clearingDamage}
+                    loadingText="Siliniyor..."
+                    flexShrink={0}
+                    bg="rgba(239,68,68,0.15)" color="#f87171"
+                    border="1px solid rgba(239,68,68,0.4)"
+                    borderRadius="lg" fontWeight="700" fontSize="xs"
+                    _hover={{ bg: 'rgba(239,68,68,0.28)' }}
+                  >
+                    🗑 Hasar Verilerini Sil
+                  </Button>
+                </Flex>
+              </Box>
+            </Box>
+
           </MotionBox>
         )}
 

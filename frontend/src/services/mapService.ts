@@ -136,6 +136,27 @@ export async function apiGetMapRequests(): Promise<ActiveRequestForMap[]> {
   }))
 }
 
+export interface CompletedRequest {
+  id: string
+  latitude: number
+  longitude: number
+  needType: string
+  teamId: string | null
+}
+
+export async function apiGetCompletedRequests(): Promise<CompletedRequest[]> {
+  const token = getToken()
+  const headers = token ? { Authorization: `Bearer ${token}` } : {}
+  const { data } = await API.get('/requests', { headers, params: { status: 'COMPLETED' } })
+  return (data ?? []).map((r: any) => ({
+    id:        r.id,
+    latitude:  r.latitude,
+    longitude: r.longitude,
+    needType:  r.need_type,
+    teamId:    r.assignment?.team_id ?? null,
+  }))
+}
+
 export async function apiGetActiveRoutes(): Promise<ActiveRoute[]> {
   const token = getToken()
   const headers = token ? { Authorization: `Bearer ${token}` } : {}
@@ -160,6 +181,31 @@ export async function apiGetActiveRoutes(): Promise<ActiveRoute[]> {
       distanceKm:       r.assignment.route_distance_km ?? 0,
       durationMin:      r.assignment.route_duration_minutes ?? 0,
     }))
+}
+
+export interface DamageCell {
+  grid_cell_id: string
+  latitude: number
+  longitude: number
+  aggregated_score: number
+  report_count: number
+  is_confirmed: boolean
+}
+
+export async function apiGetDamageMap(): Promise<DamageCell[]> {
+  const token = getToken()
+  const { data } = await API.get<DamageCell[]>('/ai/damage-map', {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  return data ?? []
+}
+
+export async function apiClearDamageMap(): Promise<{ deleted_keys: number; message: string }> {
+  const token = getToken()
+  const { data } = await API.delete('/ai/damage-map', {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  return data
 }
 
 export async function apiGetTeams(): Promise<TeamLocation[]> {

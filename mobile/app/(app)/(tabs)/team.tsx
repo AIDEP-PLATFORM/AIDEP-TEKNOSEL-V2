@@ -12,6 +12,7 @@ import { Colors, FontSize, Spacing, BorderRadius } from '@/constants/theme';
 import { useAuthStore } from '@/store/auth.store';
 import { useMapStore } from '@/store/map.store';
 import { teamService, MyTeam, ActiveTask, needTypeLabel } from '@/services/team.service';
+import ScreenTransition from '@/components/ScreenTransition';
 
 // ── Yardımcılar ──────────────────────────────────────────────────
 
@@ -39,6 +40,8 @@ export default function TeamScreen() {
   const insets       = useSafeAreaInsets();
   const router       = useRouter();
   const token        = useAuthStore((s) => s.tokens?.accessToken);
+  const currentUser  = useAuthStore((s) => s.user);
+  const isCitizen    = currentUser?.role === 'CITIZEN';
   const setPendingTaskNav = useMapStore((s) => s.setPendingTaskNav);
 
   const [team, setTeam]           = useState<MyTeam | null>(null);
@@ -46,6 +49,7 @@ export default function TeamScreen() {
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError]         = useState<string | null>(null);
+  const [completing, setCompleting] = useState(false);
 
   const fetchData = useCallback(async () => {
     if (!token) return;
@@ -75,6 +79,20 @@ export default function TeamScreen() {
     fetchData();
   };
 
+  const handleCompleteTask = async () => {
+    if (!task || !token) return;
+    setCompleting(true);
+    try {
+      await teamService.completeTask(task.id, token);
+      await fetchData();
+    } catch {
+      // hata olsa bile yenile
+      await fetchData();
+    } finally {
+      setCompleting(false);
+    }
+  };
+
   const handleGoToTask = () => {
     if (!task) return;
     setPendingTaskNav({
@@ -89,7 +107,7 @@ export default function TeamScreen() {
   // ── Render ────────────────────────────────────────────────────
 
   return (
-    <View style={styles.container}>
+    <ScreenTransition style={styles.container}>
       <StatusBar style="light" translucent backgroundColor="transparent" />
 
       {/* Üst gradyan */}
@@ -118,7 +136,13 @@ export default function TeamScreen() {
       </View>
 
       {/* İçerik */}
-      {loading ? (
+      {isCitizen ? (
+        <View style={styles.centered}>
+          <Ionicons name="lock-closed-outline" size={52} color={Colors.textMuted} />
+          <Text style={styles.notForYouTitle}>Bu özellik sizin için değil</Text>
+          <Text style={styles.notForYouSub}>Ekip yönetimi yalnızca saha personeline açıktır.</Text>
+        </View>
+      ) : loading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={styles.loadingText}>Yükleniyor...</Text>
@@ -220,6 +244,23 @@ export default function TeamScreen() {
                 <Ionicons name="map" size={16} color="#fff" />
                 <Text style={styles.goToMapBtnText}>Haritada Rotayı Görüntüle</Text>
               </TouchableOpacity>
+
+              {/* Göreve varış butonu */}
+              <TouchableOpacity
+                style={[styles.completeTaskBtn, completing && { opacity: 0.6 }]}
+                onPress={handleCompleteTask}
+                activeOpacity={0.85}
+                disabled={completing}
+              >
+                {completing ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={18} color="#fff" />
+                    <Text style={styles.completeTaskBtnText}>Görev Noktasına Varıldı</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
           ) : (
             <View style={styles.emptyCard}>
@@ -265,7 +306,7 @@ export default function TeamScreen() {
           )}
         </ScrollView>
       )}
-    </View>
+    </ScreenTransition>
   );
 }
 
@@ -297,6 +338,8 @@ const styles = StyleSheet.create({
   },
 
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
+  notForYouTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.text, marginTop: 16, textAlign: 'center' },
+  notForYouSub:   { fontSize: FontSize.sm, color: Colors.textMuted, marginTop: 8, textAlign: 'center', paddingHorizontal: 40 },
   loadingText: { fontSize: FontSize.sm, color: Colors.textSecondary },
   errorText:   { fontSize: FontSize.sm, color: Colors.error, textAlign: 'center', paddingHorizontal: 32 },
   retryBtn: {
@@ -379,6 +422,13 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.xl, paddingVertical: 13,
   },
   goToMapBtnText: { fontSize: FontSize.sm, fontWeight: '700', color: '#fff' },
+
+  completeTaskBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: Spacing.xs, backgroundColor: '#16a34a',
+    borderRadius: BorderRadius.xl, paddingVertical: 13,
+  },
+  completeTaskBtnText: { fontSize: FontSize.sm, fontWeight: '700', color: '#fff' },
 
   // ── Boş durum
   emptyCard: {

@@ -6,11 +6,17 @@ import L from 'leaflet'
 import { getRole } from '@/utils/auth'
 import {
   apiGetEarthquakes, apiGetSafeAreas, apiGetTeams, apiGetActiveRoutes, apiGetMapRequests,
+  apiGetDamageMap, apiGetCompletedRequests,
   type Earthquake, type SafeArea, type TeamLocation, type ActiveRoute, type ActiveRequestForMap,
+  type DamageCell, type CompletedRequest,
 } from '@/services/mapService'
-import { apiCalculateRoute, type RouteCalculationResult } from '@/services/requestService'
+import {
+  apiCalculateRoute, apiCreateRequest, apiManualAssign,
+  type RouteCalculationResult,
+} from '@/services/requestService'
+import { apiGetTeams as apiGetAllTeams, type TeamResponse } from '@/services/teamService'
 
-type LayerKey = 'earthquakes' | 'safeAreas' | 'teams' | 'routes' | 'requests'
+type LayerKey = 'earthquakes' | 'safeAreas' | 'teams' | 'routes' | 'requests' | 'damage'
 const MANAGER_ROLES = ['ADMIN', 'NGO_MANAGER', 'OFFICIAL_MANAGER']
 const NEED_LABELS_MAP: Record<string, string> = {
   RESCUE: 'Kurtarma', MEDICAL: 'Medikal', SHELTER: 'Barınak', FOOD: 'Gıda', OTHER: 'Diğer',
@@ -64,19 +70,27 @@ export default function MapPage() {
   const [earthquakes,   setEarthquakes]   = useState<Earthquake[]>([])
   const [safeAreas,     setSafeAreas]     = useState<SafeArea[]>([])
   const [teams,         setTeams]         = useState<TeamLocation[]>([])
+  const [allTeams,      setAllTeams]      = useState<TeamResponse[]>([])
   const [activeRoutes,      setActiveRoutes]      = useState<ActiveRoute[]>([])
   const [activeMapRequests, setActiveMapRequests] = useState<ActiveRequestForMap[]>([])
   const [selectedMapRequest, setSelectedMapRequest] = useState<ActiveRequestForMap | null>(null)
   const [mapLiveRoute,      setMapLiveRoute]      = useState<RouteCalculationResult | null>(null)
   const [mapRouteLoading,   setMapRouteLoading]   = useState(false)
   const [mapRouteError,     setMapRouteError]     = useState('')
+  const [damageCells,          setDamageCells]          = useState<DamageCell[]>([])
+  const [completedRequests,    setCompletedRequests]    = useState<CompletedRequest[]>([])
+  const [selectedDamageCell,   setSelectedDamageCell]   = useState<DamageCell | null>(null)
+  const [assignTeamId,         setAssignTeamId]         = useState('')
+  const [assigning,            setAssigning]            = useState(false)
+  const [assignMsg,            setAssignMsg]            = useState<{ ok: boolean; text: string } | null>(null)
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState('')
   const [lightMode,  setLightMode]  = useState(false)
   const [eqSort,     setEqSort]     = useState<'time' | 'mag'>('time')
   const [selectedEq, setSelectedEq] = useState<Earthquake | null>(null)
   const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
-    earthquakes: true, safeAreas: true, teams: canSeeTeams, routes: canSeeTeams, requests: canSeeTeams,
+    earthquakes: true, safeAreas: true, teams: canSeeTeams, routes: canSeeTeams,
+    requests: canSeeTeams, damage: true,
   })
 
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
@@ -91,6 +105,7 @@ export default function MapPage() {
   const tmRef     = useRef<L.LayerGroup | null>(null)
   const rtRef          = useRef<L.LayerGroup | null>(null)
   const reqRef         = useRef<L.LayerGroup | null>(null)
+  const dmRef          = useRef<L.LayerGroup | null>(null)
   const liveRouteMapRef = useRef<L.LayerGroup | null>(null)
   const userLocRef     = useRef<L.Marker | null>(null)
   const tileSwapReady = useRef(false)
@@ -119,6 +134,7 @@ export default function MapPage() {
     tileRef.current  = tile
     eqRef.current         = L.layerGroup().addTo(map)
     saRef.current         = L.layerGroup().addTo(map)
+    dmRef.current         = L.layerGroup().addTo(map)
     rtRef.current         = L.layerGroup().addTo(map)
     tmRef.current         = L.layerGroup().addTo(map)
     reqRef.current        = L.layerGroup().addTo(map)
@@ -138,6 +154,7 @@ export default function MapPage() {
       tileRef.current        = null
       eqRef.current          = null
       saRef.current          = null
+      dmRef.current          = null
       tmRef.current          = null
       rtRef.current          = null
       reqRef.current         = null
@@ -166,10 +183,13 @@ export default function MapPage() {
 
   // ── Load data ────────────────────────────────────────────────────
   const loadRoutes = useCallback(async () => {
+    try { setDamageCells(await apiGetDamageMap()) } catch { /* damage unavailable */ }
     if (!canSeeTeams) return
     try { setTeams(await apiGetTeams()) } catch { /* teams unavailable */ }
+    try { setAllTeams(await apiGetAllTeams()) } catch { /* all teams unavailable */ }
     try { setActiveRoutes(await apiGetActiveRoutes()) } catch { /* routes unavailable */ }
     try { setActiveMapRequests(await apiGetMapRequests()) } catch { /* requests unavailable */ }
+    try { setCompletedRequests(await apiGetCompletedRequests()) } catch { /* completed unavailable */ }
   }, [canSeeTeams])
 
   useEffect(() => {
@@ -211,6 +231,76 @@ export default function MapPage() {
       `).addTo(layer)
     })
   }, [earthquakes, layers.earthquakes])
+
+  // ── Damage cell markers ──────────────────────────────────────────
+  useEffect(() => {
+    const layer = dmRef.current; if (!layer) return
+    layer.clearLayers()
+    if (!layers.damage) return
+
+    // Tamamlanan görevleri hasar hücresiyle koordinat yakınlığına göre eşleştir (~150m)
+    const findCompleted = (cell: DamageCell): CompletedRequest | undefined => {
+      return completedRequests.find(cr => {
+        const dlat = Math.abs(cr.latitude - cell.latitude)
+        const dlon = Math.abs(cr.longitude - cell.longitude)
+        return dlat < 0.0015 && dlon < 0.0015
+      })
+    }
+
+    damageCells.forEach(cell => {
+      const score = cell.aggregated_score
+      const completed = findCompleted(cell)
+
+      let color: string
+      let fillOpacity: number
+      let radius: number
+      let tooltipText: string
+
+      if (completed) {
+        // Tamamlanan görev → yeşil
+        color = '#22c55e'
+        fillOpacity = 0.6
+        radius = 14
+        const teamName = allTeams.find(t => t.id === completed.teamId)?.name ?? 'Ekip'
+        tooltipText = `✅ ${teamName} başarıyla vardı`
+      } else {
+        color = score >= 0.5 ? '#ef4444' : score >= 0.3 ? '#f97316' : score >= 0.1 ? '#eab308' : '#22c55e'
+        fillOpacity = 0.45
+        radius = 14
+        tooltipText = `Hasar: ${(score * 100).toFixed(0)}% · ${cell.report_count} rapor`
+      }
+
+      const marker = L.circleMarker([cell.latitude, cell.longitude], {
+        radius, color, fillColor: color, fillOpacity, weight: completed ? 2.5 : 1.5,
+      }).bindTooltip(tooltipText, { direction: 'top', offset: [0, -14] })
+
+      if (completed) {
+        const teamName = allTeams.find(t => t.id === completed.teamId)?.name ?? 'Bilinmeyen Ekip'
+        marker.bindPopup(`
+          <div style="min-width:160px">
+            <div style="font-weight:700;color:#22c55e;margin-bottom:4px">✅ Ekip Başarıyla Vardı</div>
+            <div style="color:#ccc;font-size:12px">🚒 ${teamName}</div>
+            <div style="color:#888;font-size:11px;margin-top:4px">
+              Hasar Skoru: ${(score * 100).toFixed(0)}% · ${cell.report_count} rapor
+            </div>
+          </div>
+        `)
+        marker.on('click', () => {
+          marker.openPopup()
+          mapRef.current?.panTo([cell.latitude, cell.longitude])
+        })
+      } else if (canSeeTeams) {
+        marker.on('click', () => {
+          setSelectedDamageCell(cell)
+          setAssignTeamId('')
+          setAssignMsg(null)
+          mapRef.current?.panTo([cell.latitude, cell.longitude])
+        })
+      }
+
+      marker.addTo(layer)
+    })
+  }, [damageCells, completedRequests, allTeams, layers.damage, canSeeTeams])
 
   // ── Safe area markers ────────────────────────────────────────────
   useEffect(() => {
@@ -412,6 +502,32 @@ export default function MapPage() {
     )
   }
 
+  // ── Hasar noktasından ekip yönlendir ────────────────────────────
+  const handleDispatchTeam = async () => {
+    if (!selectedDamageCell || !assignTeamId) return
+    setAssigning(true)
+    setAssignMsg(null)
+    try {
+      const req = await apiCreateRequest({
+        latitude: selectedDamageCell.latitude,
+        longitude: selectedDamageCell.longitude,
+        need_type: 'RESCUE',
+        urgency_level: selectedDamageCell.aggregated_score >= 0.5 ? 5
+          : selectedDamageCell.aggregated_score >= 0.3 ? 4
+          : selectedDamageCell.aggregated_score >= 0.1 ? 3 : 2,
+        person_count: 1,
+        description: `Hasar noktası — Skor: ${(selectedDamageCell.aggregated_score * 100).toFixed(0)}%, ${selectedDamageCell.report_count} rapor`,
+      })
+      await apiManualAssign(req.id, assignTeamId)
+      setAssignMsg({ ok: true, text: 'Ekip başarıyla yönlendirildi!' })
+      await loadRoutes()
+    } catch (e: any) {
+      setAssignMsg({ ok: false, text: e?.response?.data?.detail ?? 'Yönlendirme başarısız.' })
+    } finally {
+      setAssigning(false)
+    }
+  }
+
   // ── Draw / update user location marker ──────────────────────────
   useEffect(() => {
     const map = mapRef.current
@@ -495,6 +611,8 @@ export default function MapPage() {
               onClick={() => toggle('earthquakes')} label={`Depremler (${earthquakes.length})`} />
             <LayerBtn active={layers.safeAreas} color="#4ade80"
               onClick={() => toggle('safeAreas')} label={`Toplanma (${safeAreas.length})`} />
+            <LayerBtn active={layers.damage} color="#ef4444"
+              onClick={() => toggle('damage')} label={`Hasar (${damageCells.length})`} />
             {canSeeTeams && (
               <LayerBtn active={layers.teams} color="#60a5fa"
                 onClick={() => toggle('teams')} label={`Ekipler (${teams.length})`} />
@@ -552,6 +670,87 @@ export default function MapPage() {
 
         {/* Leaflet container */}
         <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+
+        {/* Damage cell dispatch panel */}
+        {selectedDamageCell && canSeeTeams && (
+          <Box
+            position="absolute" top={4} left={4} zIndex={1001}
+            w="260px"
+            bg={panelBg} backdropFilter="blur(16px)"
+            border="1px solid rgba(239,68,68,0.3)" borderRadius="2xl"
+            overflow="hidden"
+          >
+            {/* Header */}
+            <Flex align="center" justify="space-between" px={4} pt={4} pb={3}
+              borderBottom="1px solid rgba(239,68,68,0.2)">
+              <Box>
+                <Flex align="center" gap={2}>
+                  <Box w={2} h={2} borderRadius="full"
+                    bg={selectedDamageCell.aggregated_score >= 0.5 ? '#ef4444'
+                      : selectedDamageCell.aggregated_score >= 0.3 ? '#f97316' : '#eab308'} />
+                  <Text fontSize="xs" fontWeight="700" color={txtMain}>Hasar Bölgesi</Text>
+                </Flex>
+                <Text fontSize="10px" color={textFaint} mt={0.5}>
+                  {selectedDamageCell.report_count} rapor ·{' '}
+                  {(selectedDamageCell.aggregated_score * 100).toFixed(0)}% hasar skoru
+                </Text>
+              </Box>
+              <Button size="xs" variant="ghost" color={textMuted} minW={0} px={1.5}
+                _hover={{ color: '#f87171' }}
+                onClick={() => { setSelectedDamageCell(null); setAssignMsg(null) }}>✕</Button>
+            </Flex>
+
+            {/* Koordinat */}
+            <Box px={4} py={2.5} borderBottom="1px solid rgba(239,68,68,0.15)">
+              <Text fontSize="10px" color={textFaint}>
+                {selectedDamageCell.latitude.toFixed(5)}, {selectedDamageCell.longitude.toFixed(5)}
+              </Text>
+            </Box>
+
+            {/* Ekip seç */}
+            <Box px={4} py={3}>
+              <Text fontSize="10px" fontWeight="700" color={textMuted}
+                textTransform="uppercase" letterSpacing="wider" mb={2}>Ekip Seç</Text>
+              <select
+                value={assignTeamId}
+                onChange={e => setAssignTeamId(e.target.value)}
+                style={{
+                  width: '100%', padding: '7px 10px', borderRadius: '10px', fontSize: '12px',
+                  background: light ? '#f1f5f9' : 'rgba(255,255,255,0.06)',
+                  color: light ? '#0f172a' : 'white',
+                  border: `1px solid ${panelBorder}`, outline: 'none', cursor: 'pointer',
+                }}
+              >
+                <option value="">— Ekip seçin —</option>
+                {allTeams.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+
+              <Button
+                mt={2.5} w="full" size="sm"
+                onClick={handleDispatchTeam}
+                isLoading={assigning}
+                loadingText="Yönlendiriliyor..."
+                isDisabled={!assignTeamId}
+                bg="rgba(239,68,68,0.15)" color="#ef4444"
+                border="1px solid rgba(239,68,68,0.4)"
+                borderRadius="lg" fontWeight="700" fontSize="xs"
+                _hover={{ bg: 'rgba(239,68,68,0.25)' }}
+                _disabled={{ opacity: 0.4 }}
+              >
+                🚒 Ekibi Yönlendir
+              </Button>
+
+              {assignMsg && (
+                <Text fontSize="11px" mt={2} textAlign="center" fontWeight="600"
+                  color={assignMsg.ok ? '#4ade80' : '#f87171'}>
+                  {assignMsg.text}
+                </Text>
+              )}
+            </Box>
+          </Box>
+        )}
 
         {/* Selected request panel */}
         {selectedMapRequest && (
@@ -696,6 +895,10 @@ export default function MapPage() {
               { c:'#f87171', l:'Deprem M≥6' }, { c:'#fb923c', l:'Deprem M≥5' },
               { c:'#fbbf24', l:'Deprem M≥4' }, { c:'#a3e635', l:'Deprem M<4' },
               { c:'#4ade80', l:'Toplanma Alanı' },
+              { c:'#ef4444', l:'Hasar (Kritik)' },
+              { c:'#f97316', l:'Hasar (Riskli)' },
+              { c:'#eab308', l:'Hasar (Hafif)' },
+              { c:'#22c55e', l:'Hasar (Ekip Vardı)' },
             ].map(r => (
               <Flex key={r.l} align="center" gap={2}>
                 <Box w={3} h={3} borderRadius="full" bg={r.c} opacity={0.8} flexShrink={0} />
@@ -746,6 +949,7 @@ export default function MapPage() {
               {[
                 { v: earthquakes.length,  l:'Deprem',   c:'#fb923c' },
                 { v: safeAreas.length,    l:'Toplanma', c:'#4ade80' },
+                { v: damageCells.length,  l:'Hasar',    c:'#ef4444' },
                 ...(canSeeTeams ? [
                   { v: teams.length,             l:'Ekip',   c:'#60a5fa' },
                   { v: activeRoutes.length,      l:'Rota',   c:'#fbbf24' },

@@ -14,9 +14,13 @@ export interface PendingTaskNav {
 interface MapStore {
   pendingTaskNav: PendingTaskNav | null;
   setPendingTaskNav: (nav: PendingTaskNav | null) => void;
+  pendingFilter: string | null;
+  setPendingFilter: (filter: string | null) => void;
 }
 
 export const useMapStore = create<MapStore>((set) => ({
   pendingTaskNav: null,
   setPendingTaskNav: (nav) => set({ pendingTaskNav: nav }),
+  pendingFilter: null,
+  setPendingFilter: (filter) => set({ pendingFilter: filter }),
 }));

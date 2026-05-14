@@ -174,6 +174,17 @@ async def get_damage_map() -> list[dict]:
     return cells
 
 
+async def clear_all_damage_cells() -> int:
+    """Redis'teki tüm ai:grid:* key'lerini siler. Silinen key sayısını döner."""
+    redis = get_redis()
+    keys = await redis.keys("ai:grid:*")
+    if not keys:
+        return 0
+    deleted = await redis.delete(*keys)
+    logger.info("clear_all_damage_cells: %d key silindi", deleted)
+    return deleted
+
+
 async def get_grid_score(latitude: float, longitude: float) -> float:
     cell_id = _grid_cell_id(latitude, longitude)
     redis = get_redis()

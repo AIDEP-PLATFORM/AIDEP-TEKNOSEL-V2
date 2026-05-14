@@ -55,4 +55,7 @@ export const teamService = {
 
   getMyTask: (token: string): Promise<ActiveTask | null> =>
     apiClient.get<ActiveTask | null>('/requests/my-task', token),
+
+  completeTask: (requestId: string, token: string): Promise<void> =>
+    apiClient.put(`/requests/${requestId}/assignment-status`, { status: 'COMPLETED' }, token),
 };

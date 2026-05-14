@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   View, Text, StyleSheet, TouchableOpacity,
@@ -15,6 +15,7 @@ import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSize, Spacing, BorderRadius } from '@/constants/theme';
+import ScreenTransition from '@/components/ScreenTransition';
 import { mapService, EarthquakePoint, SafeAreaPoint, RouteData, RouteStep, AlternativeRoute } from '@/services/map.service';
 import { aiService } from '@/services/ai.service';
 import { useAuthStore } from '@/store/auth.store';
@@ -51,6 +52,58 @@ function haversineM(lat1: number, lon1: number, lat2: number, lon2: number): num
   const a = Math.sin(dLat / 2) ** 2
     + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/**
+ * Bir noktanın (px,py) bir çizgi segmentine (ax,ay)-(bx,by) olan
+ * minimum mesafesini metre cinsinden döner.
+ * Koordinatlar derece, hesaplama düzlemsel yaklaşım (kısa mesafeler için yeterli).
+ */
+function pointToSegmentM(
+  plat: number, plon: number,
+  alat: number, alon: number,
+  blat: number, blon: number,
+): number {
+  // Metre cinsine çevir (yaklaşık)
+  const metersPerDegLat = 111_320;
+  const metersPerDegLon = 111_320 * Math.cos(plat * Math.PI / 180);
+
+  const px = plon * metersPerDegLon;
+  const py = plat * metersPerDegLat;
+  const ax = alon * metersPerDegLon;
+  const ay = alat * metersPerDegLat;
+  const bx = blon * metersPerDegLon;
+  const by = blat * metersPerDegLat;
+
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - ax, py - ay);
+
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+/**
+ * Bir rota (coords dizisi) ile bir hasar hücresi arasındaki
+ * minimum mesafeyi metre cinsinden döner.
+ */
+function minDistRouteToCell(
+  coords: { latitude: number; longitude: number }[],
+  cellLat: number, cellLon: number,
+): number {
+  let minDist = Infinity;
+  for (let i = 0; i < coords.length - 1; i++) {
+    const d = pointToSegmentM(
+      cellLat, cellLon,
+      coords[i].latitude, coords[i].longitude,
+      coords[i + 1].latitude, coords[i + 1].longitude,
+    );
+    if (d < minDist) minDist = d;
+  }
+  // Son nokta için de kontrol et
+  if (coords.length > 0)
+    minDist = Math.min(minDist, haversineM(cellLat, cellLon, coords[coords.length - 1].latitude, coords[coords.length - 1].longitude));
+  return minDist;
 }
 
 // Eşikler area_score formülüne (road×0.7 + bldg×0.3) göre ayarlandı:
@@ -97,6 +150,8 @@ export default function MapScreen() {
   const localDamageReports = useDamageStore((s) => s.reports);
   const pendingTaskNav    = useMapStore((s) => s.pendingTaskNav);
   const setPendingTaskNav = useMapStore((s) => s.setPendingTaskNav);
+  const pendingFilter     = useMapStore((s) => s.pendingFilter);
+  const setPendingFilter  = useMapStore((s) => s.setPendingFilter);
 
   // Harita verisi
   const [activeFilter, setActiveFilter] = useState('hasar');
@@ -173,6 +228,14 @@ export default function MapScreen() {
     }, [token])
   );
 
+  // ── Ana ekrandan gelen filtre isteği ─────────────────────────
+  useEffect(() => {
+    if (!pendingFilter) return;
+    setActiveFilter(pendingFilter);
+    if (pendingFilter === 'guvenlirota') setRouteMode('selecting');
+    setPendingFilter(null);
+  }, [pendingFilter]);
+
   // ── Ekibim tab'ından gelen görev navigasyonu ──────────────────
   useEffect(() => {
     if (!pendingTaskNav || !location) return;
@@ -221,48 +284,120 @@ export default function MapScreen() {
     return route.geometry.map(([lon, lat]) => ({ latitude: lat, longitude: lon }));
   }, [route]);
 
-  // ── Frontend hasar kontrolü: rota + tüm hasar kaynakları ──────
-  // Backend'in görmediği local raporları da dahil eder
+  // ── Frontend hasar kontrolü: rota koordinatları ↔ güncel hasar hücreleri ──
   const routeDamageCheck = useMemo(() => {
-    if (!route || routeCoords.length === 0) return { isRisky: false, count: 0, ratio: 0 };
+    if (!route || routeCoords.length === 0) return { isRisky: false, count: 0, safeAltIdx: -1 };
 
-    // Backend damage_score'u normalize et (en güvenilir kaynak)
-    const backendRatio = route.geometry.length > 0
-      ? route.damage_score / route.geometry.length
-      : 0;
-
-    // Frontend: rota koordinatlarının kaçı hasar bölgesine yakın?
-    // Eşik: hasar noktasının görsel yarıçapına yakın (~50m = 0.00045°)
-    const RADIUS_DEG = 0.00045;
-    let hitRoutePoints = 0;
-
-    const allDamagePoints: { latitude: number; longitude: number }[] = [
-      ...damageGrid.map(c => ({ latitude: c.latitude, longitude: c.longitude })),
-      ...localDamageReports.map(r => ({ latitude: r.coordinates.latitude, longitude: r.coordinates.longitude })),
+    // 1) Frontend kontrolü — haritadaki anlık hücrelerle karşılaştır
+    const allCells = [
+      ...damageGrid.map(c => ({ lat: c.latitude, lon: c.longitude })),
+      ...localDamageReports.map(r => ({ lat: r.coordinates.latitude, lon: r.coordinates.longitude })),
     ];
 
-    for (const coord of routeCoords) {
-      const nearDamage = allDamagePoints.some(
-        dmg =>
-          Math.abs(coord.latitude - dmg.latitude) < RADIUS_DEG &&
-          Math.abs(coord.longitude - dmg.longitude) < RADIUS_DEG,
-      );
-      if (nearDamage) hitRoutePoints++;
+    // Segment bazlı kontrol: geometri noktaları seyrek olsa bile
+    // rota çizgisinin hasar hücresine olan minimum mesafeyi hesapla
+    const DAMAGE_RADIUS_M = 180;
+    let hitCount = 0;
+    if (allCells.length > 0) {
+      for (const cell of allCells) {
+        if (minDistRouteToCell(routeCoords, cell.lat, cell.lon) <= DAMAGE_RADIUS_M)
+          hitCount++;
+      }
+    }
+    // Kaç hasar hücresi rotaya yakın? En az 1 tanesi yeterliyse riskli say
+    const frontendHit = hitCount > 0;
+
+    // 2) Backend kontrolü — fallback olarak (damage grid henüz yüklenmediyse yakalar)
+    const backendRatio = route.geometry.length > 0 ? route.damage_score / route.geometry.length : 0;
+
+    // İkisinden biri tetiklenirse riskli say
+    const isRisky = frontendHit || backendRatio > 0.15;
+
+    // 3) En güvenli alternatifi bul — segment bazlı kontrol
+    let safeAltIdx = -1;
+    if (isRisky && route.alternatives && route.alternatives.length > 0) {
+      route.alternatives.forEach((alt, idx) => {
+        const altCoords = alt.geometry.map(([lon, lat]) => ({ latitude: lat, longitude: lon }));
+        // Bu alternatif herhangi bir hasar hücresine yakın mı?
+        const altHit = allCells.some(
+          cell => minDistRouteToCell(altCoords, cell.lat, cell.lon) <= DAMAGE_RADIUS_M
+        );
+        // Backend fallback
+        const altBackendRatio = alt.geometry.length > 0 ? alt.damage_score / alt.geometry.length : 0;
+        const altRisky = altHit || altBackendRatio > 0.15;
+        // İlk güvenli alternatifi seç
+        if (!altRisky && safeAltIdx === -1) safeAltIdx = idx;
+      });
     }
 
-    // Rota noktalarının %5'inden fazlası hasar bölgesinden geçiyorsa riskli
-    const frontendRatio = hitRoutePoints / Math.max(routeCoords.length, 1);
-    const isRisky = backendRatio > 0.08 || frontendRatio > 0.05;
-    const count = allDamagePoints.filter(dmg =>
-      routeCoords.some(
-        coord =>
-          Math.abs(coord.latitude - dmg.latitude) < RADIUS_DEG &&
-          Math.abs(coord.longitude - dmg.longitude) < RADIUS_DEG,
-      )
-    ).length;
-
-    return { isRisky, count, ratio: Math.max(backendRatio, frontendRatio) };
+    return { isRisky, count: hitCount, safeAltIdx };
   }, [route, routeCoords, damageGrid, localDamageReports]);
+
+  // ── Hasarlı + alternatif yok → hedefe ~200m yakın güvenli nokta ara ────
+  const [nearbySafeRoute, setNearbySafeRoute] = useState<{
+    coord: { latitude: number; longitude: number };
+    routeData: RouteData;
+  } | null>(null);
+  const [searchingNearbySafe, setSearchingNearbySafe] = useState(false);
+
+  useEffect(() => {
+    if (!routeDamageCheck.isRisky || routeDamageCheck.safeAltIdx >= 0 || !destination || !location || !token) {
+      setNearbySafeRoute(null);
+      return;
+    }
+
+    const allCells = [
+      ...damageGrid.map(c => ({ lat: c.latitude, lon: c.longitude })),
+      ...localDamageReports.map(r => ({ lat: r.coordinates.latitude, lon: r.coordinates.longitude })),
+    ];
+
+    // ~200m offset (Türkiye enlemleri için yaklaşık)
+    const D = 0.0018;
+    const candidates = [
+      { latitude: destination.latitude + D,            longitude: destination.longitude },
+      { latitude: destination.latitude - D,            longitude: destination.longitude },
+      { latitude: destination.latitude,                longitude: destination.longitude + D },
+      { latitude: destination.latitude,                longitude: destination.longitude - D },
+      { latitude: destination.latitude + D * 0.7,      longitude: destination.longitude + D * 0.7 },
+      { latitude: destination.latitude + D * 0.7,      longitude: destination.longitude - D * 0.7 },
+      { latitude: destination.latitude - D * 0.7,      longitude: destination.longitude + D * 0.7 },
+      { latitude: destination.latitude - D * 0.7,      longitude: destination.longitude - D * 0.7 },
+    ].filter(c =>
+      // Adayın kendisi hasar bölgesinde olmasın
+      !allCells.some(cell => haversineM(c.latitude, c.longitude, cell.lat, cell.lon) <= 200)
+    );
+
+    let cancelled = false;
+    const find = async () => {
+      setSearchingNearbySafe(true);
+      setNearbySafeRoute(null);
+      for (const candidate of candidates.slice(0, 3)) {
+        if (cancelled) break;
+        try {
+          const data = await mapService.getRoute(
+            location.latitude, location.longitude,
+            candidate.latitude, candidate.longitude,
+            token, [],
+          );
+          if (cancelled) break;
+          const coords = data.geometry.map(([lon, lat]) => ({ latitude: lat, longitude: lon }));
+          const hit = allCells.some(cell => minDistRouteToCell(coords, cell.lat, cell.lon) <= 180);
+          const backendRatio = data.geometry.length > 0 ? data.damage_score / data.geometry.length : 0;
+          if (!hit && backendRatio <= 0.15) {
+            setNearbySafeRoute({ coord: candidate, routeData: data });
+            break;
+          }
+        } catch { /* bu adayı atla */ }
+      }
+      if (!cancelled) setSearchingNearbySafe(false);
+    };
+    find();
+    return () => { cancelled = true; };
+  }, [
+    routeDamageCheck.isRisky, routeDamageCheck.safeAltIdx,
+    destination?.latitude, destination?.longitude,
+    damageGrid, localDamageReports, token,
+  ]);
 
   // ── Nominatim adres arama ─────────────────────────────────────
 
@@ -340,6 +475,8 @@ export default function MapScreen() {
       setRemainingKm(data.distance_km);
       setRemainingMin(data.duration_min);
       setCurrentStepIdx(0);
+      // Rota çekildikten hemen sonra damage grid'i yenile (hasar kontrolü güncel olsun)
+      if (token) aiService.getDamageMap(token).then(setDamageGrid).catch(() => {});
 
       // Tüm rotayı gösterecek şekilde haritayı büyüt
       const allCoords = data.geometry.map(([lon, lat]) => ({ latitude: lat, longitude: lon }));
@@ -386,6 +523,7 @@ export default function MapScreen() {
         const newPos = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
         setNavLocation(newPos);
 
+
         // Kamerayı konuma takip ettir (Google Maps tarzı)
         mapRef.current?.animateCamera(
           {
@@ -428,6 +566,7 @@ export default function MapScreen() {
     setRoute(null);
     setDestination(null);
     setNavLocation(null);
+
     setCurrentStepIdx(0);
     setUserWaypoints([]);
     setIsAddingWaypoint(false);
@@ -479,7 +618,7 @@ export default function MapScreen() {
   // ── Render ────────────────────────────────────────────────────
 
   return (
-    <View style={styles.container}>
+    <ScreenTransition style={styles.container} slideAmount={0}>
       <StatusBar style="light" translucent backgroundColor="transparent" />
 
       {/* ── Harita ── */}
@@ -558,15 +697,19 @@ export default function MapScreen() {
           const pos = navLocation ?? location!;
           return (
             <>
-              <Circle
-                center={pos}
-                radius={isNavigating ? 20 : 80}
-                fillColor="rgba(6,182,212,0.15)"
-                strokeColor="rgba(6,182,212,0.4)"
-                strokeWidth={1}
-              />
+              {/* Hassasiyet halkası — sadece normal modda */}
+              {!isNavigating && (
+                <Circle
+                  center={pos}
+                  radius={80}
+                  fillColor="rgba(91,33,182,0.10)"
+                  strokeColor="rgba(91,33,182,0.3)"
+                  strokeWidth={1}
+                />
+              )}
+
               <Marker coordinate={pos} anchor={{ x: 0.5, y: 0.5 }}>
-                <View style={[styles.myLocationMarker, isNavigating && styles.myLocationMarkerNav]}>
+                <View style={styles.myLocationMarker}>
                   <View style={styles.myLocationDot} />
                 </View>
               </Marker>
@@ -582,6 +725,24 @@ export default function MapScreen() {
             </View>
           </Marker>
         )}
+
+        {/* Yakın güvenli rota — hasarlı + alternatif yok durumunda */}
+        {nearbySafeRoute && (isPreview || isNavigating) && (() => {
+          const coords = nearbySafeRoute.routeData.geometry.map(([lon, lat]) => ({ latitude: lat, longitude: lon }));
+          return (
+            <>
+              {/* Rota çizgisi — mor kesik */}
+              <Polyline coordinates={coords} strokeColor="rgba(124,58,237,0.3)" strokeWidth={8} lineDashPattern={[8,5]} />
+              <Polyline coordinates={coords} strokeColor="#7c3aed" strokeWidth={4} lineDashPattern={[8,5]} />
+              {/* Hedef marker */}
+              <Marker coordinate={nearbySafeRoute.coord} tracksViewChanges={false}>
+                <View style={styles.safeNearbyMarker}>
+                  <Ionicons name="shield-checkmark" size={15} color="#fff" />
+                </View>
+              </Marker>
+            </>
+          );
+        })()}
 
         {/* Kullanıcı ara durak marker'ları */}
         {userWaypoints.map((wp, idx) => (
@@ -601,57 +762,91 @@ export default function MapScreen() {
           </Marker>
         ))}
 
-        {/* Alternatif rotalar */}
+        {/* Alternatif rotalar — şeffaf, hafif border görünümü */}
         {(isPreview || isNavigating) && route?.alternatives?.map((alt, idx) => {
           const altCoords = alt.geometry.map(([lon, lat]) => ({ latitude: lat, longitude: lon }));
-          const altRatio = alt.geometry.length > 0 ? alt.damage_score / alt.geometry.length : 0;
-          const isDamaged = altRatio > 0.08; // rotanın %8'inden fazlası hasar bölgesine yakınsa riskli
+          // Segment bazlı hasar kontrolü (ana rota ile aynı yöntem)
+          const allDamageCells = [
+            ...damageGrid.map(c => ({ lat: c.latitude, lon: c.longitude })),
+            ...localDamageReports.map(r => ({ lat: r.coordinates.latitude, lon: r.coordinates.longitude })),
+          ];
+          const altFrontendHit = allDamageCells.some(
+            cell => minDistRouteToCell(altCoords, cell.lat, cell.lon) <= 180
+          );
+          const altBackendRatio = alt.geometry.length > 0 ? alt.damage_score / alt.geometry.length : 0;
+          const isDamaged = altFrontendHit || altBackendRatio > 0.15;
           return (
-            <Polyline
-              key={`alt-${idx}`}
-              coordinates={altCoords}
-              strokeColor={isDamaged ? 'rgba(239,68,68,0.6)' : 'rgba(167,139,250,0.5)'}
-              strokeWidth={3}
-              tappable
-              onPress={() => {
-                const newRoute: RouteData = {
-                  ...alt,
-                  steps: route.steps,
-                  alternatives: [
-                    {
-                      distance_km: route.distance_km,
-                      duration_min: route.duration_min,
-                      geometry: route.geometry,
-                      damage_score: route.damage_score,
-                    },
-                    ...route.alternatives!.filter((_, i) => i !== idx),
-                  ],
-                };
-                setRoute(newRoute);
-                setRemainingKm(alt.distance_km);
-                setRemainingMin(alt.duration_min);
-              }}
-            />
+            <React.Fragment key={`alt-${idx}`}>
+              {/* Mor dış çizgi (border) */}
+              <Polyline
+                coordinates={altCoords}
+                strokeColor={isDamaged ? '#ef4444' : '#7c3aed'}
+                strokeWidth={7}
+                tappable
+                onPress={() => {
+                  const newRoute: RouteData = {
+                    ...alt,
+                    steps: route.steps,
+                    alternatives: [
+                      {
+                        distance_km: route.distance_km,
+                        duration_min: route.duration_min,
+                        geometry: route.geometry,
+                        damage_score: route.damage_score,
+                      },
+                      ...route.alternatives!.filter((_, i) => i !== idx),
+                    ],
+                  };
+                  setRoute(newRoute);
+                  setRemainingKm(alt.distance_km);
+                  setRemainingMin(alt.duration_min);
+                }}
+              />
+              {/* Açık iç dolgu */}
+              <Polyline
+                coordinates={altCoords}
+                strokeColor={isDamaged ? 'rgba(254,202,202,0.75)' : 'rgba(233,213,255,0.75)'}
+                strokeWidth={4}
+              />
+            </React.Fragment>
           );
         })}
 
-        {/* Rota çizgisi */}
+        {/* Konumdan rota başlangıcına kesik bağlantı çizgisi */}
+        {routeCoords.length > 0 && (isPreview || isNavigating) && (location || navLocation) && (() => {
+          const userPos = navLocation ?? location!;
+          const routeStart = routeCoords[0];
+          const dlat = Math.abs(userPos.latitude - routeStart.latitude);
+          const dlon = Math.abs(userPos.longitude - routeStart.longitude);
+          // Kullanıcı rota başlangıcından uzaktaysa kesik çizgi göster (~50m eşik)
+          if (dlat < 0.0005 && dlon < 0.0005) return null;
+          return (
+            <Polyline
+              coordinates={[userPos, routeStart]}
+              strokeColor="rgba(124,58,237,0.5)"
+              strokeWidth={2.5}
+              lineDashPattern={[6, 5]}
+            />
+          );
+        })()}
+
+        {/* Ana rota — kalın, düz, opak */}
         {routeCoords.length > 0 && (isPreview || isNavigating) && (
           <>
-            {/* Gölge çizgi */}
+            {/* Gölge */}
             <Polyline
               coordinates={routeCoords}
-              strokeColor="rgba(0,0,0,0.3)"
-              strokeWidth={8}
+              strokeColor="rgba(0,0,0,0.5)"
+              strokeWidth={9}
             />
-            {/* Ana rota */}
+            {/* Ana renk — tam opak, Google Maps tarzı */}
             {(() => {
               const mainDamaged = routeDamageCheck.isRisky;
               return (
                 <Polyline
                   coordinates={routeCoords}
-                  strokeColor={mainDamaged ? '#ef4444' : '#a78bfa'}
-                  strokeWidth={5}
+                  strokeColor={mainDamaged ? '#dc2626' : '#5b21b6'}
+                  strokeWidth={6}
                 />
               );
             })()}
@@ -874,14 +1069,78 @@ export default function MapScreen() {
                   <Text style={styles.routeInfoLabel}>Güzergah</Text>
                 </View>
               </View>
-              {/* Riskli uyarı — count > 0 olduğunda göster */}
-              {routeDamageCheck.isRisky && routeDamageCheck.count > 0 && (
-                <View style={styles.riskyRouteBanner}>
-                  <Ionicons name="warning" size={13} color="#f97316" />
-                  <Text style={styles.riskyRouteBannerText}>
-                    {routeDamageCheck.count} hasarlı bölgeden geçiyor.
-                  </Text>
-                </View>
+              {/* Riskli uyarı */}
+              {routeDamageCheck.isRisky && (
+                <>
+                  <View style={[styles.riskyRouteBanner, { backgroundColor: 'rgba(239,68,68,0.12)', borderColor: 'rgba(239,68,68,0.3)' }]}>
+                    <Ionicons name="warning" size={13} color="#ef4444" />
+                    <Text style={[styles.riskyRouteBannerText, { flex: 1, color: '#ef4444' }]}>
+                      Rota hasarlı bölgeden geçiyor!
+                    </Text>
+                    {routeDamageCheck.safeAltIdx >= 0 && route?.alternatives && (
+                      <TouchableOpacity
+                        onPress={() => {
+                          const alt = route.alternatives![routeDamageCheck.safeAltIdx];
+                          const newRoute: RouteData = {
+                            ...alt,
+                            steps: route.steps,
+                            alternatives: [
+                              { distance_km: route.distance_km, duration_min: route.duration_min, geometry: route.geometry, damage_score: route.damage_score },
+                              ...route.alternatives!.filter((_, i) => i !== routeDamageCheck.safeAltIdx),
+                            ],
+                          };
+                          setRoute(newRoute);
+                          setRemainingKm(alt.distance_km);
+                          setRemainingMin(alt.duration_min);
+                        }}
+                        style={styles.safeAltBtn}
+                      >
+                        <Ionicons name="shield-checkmark" size={12} color="#fff" />
+                        <Text style={styles.safeAltBtnText}>Güvenli Rotaya Geç</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {/* Alternatif yok → hedefe ~200m yakın güvenli nokta öner */}
+                  {routeDamageCheck.safeAltIdx === -1 && (
+                    <View style={styles.safeNearbyBanner}>
+                      <Ionicons
+                        name={searchingNearbySafe ? 'sync' : nearbySafeRoute ? 'shield-checkmark' : 'close-circle'}
+                        size={13}
+                        color={nearbySafeRoute ? '#7c3aed' : '#6b7280'}
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.safeNearbyTitle}>
+                          {searchingNearbySafe
+                            ? 'Yakın güvenli nokta aranıyor...'
+                            : nearbySafeRoute
+                              ? 'Hedefe ~200m yakın güvenli nokta bulundu'
+                              : 'Yakın güvenli nokta bulunamadı'}
+                        </Text>
+                        {nearbySafeRoute && (
+                          <Text style={styles.safeNearbySubtitle}>
+                            {`${(nearbySafeRoute.routeData.distance_km).toFixed(1)} km · ${Math.round(nearbySafeRoute.routeData.duration_min)} dk`}
+                          </Text>
+                        )}
+                      </View>
+                      {nearbySafeRoute && (
+                        <TouchableOpacity
+                          style={styles.safeAltBtn}
+                          onPress={() => {
+                            setDestination(nearbySafeRoute.coord);
+                            setRoute(nearbySafeRoute.routeData);
+                            setRemainingKm(nearbySafeRoute.routeData.distance_km);
+                            setRemainingMin(nearbySafeRoute.routeData.duration_min);
+                            setNearbySafeRoute(null);
+                          }}
+                        >
+                          <Ionicons name="navigate" size={12} color="#fff" />
+                          <Text style={styles.safeAltBtnText}>Oraya Git</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+                </>
               )}
               {/* Durak bilgi satırı — sadece durak varsa */}
               {userWaypoints.length > 0 && (
@@ -991,7 +1250,7 @@ export default function MapScreen() {
           </TouchableOpacity>
         </View>
       )}
-    </View>
+    </ScreenTransition>
   );
 }
 
@@ -1073,16 +1332,12 @@ const styles = StyleSheet.create({
   },
   myLocationMarker: {
     width: 24, height: 24, borderRadius: 12,
-    backgroundColor: 'rgba(6,182,212,0.25)',
+    backgroundColor: 'rgba(91,33,182,0.25)',
     alignItems: 'center', justifyContent: 'center',
-    borderWidth: 2, borderColor: Colors.primary,
+    borderWidth: 2, borderColor: '#5b21b6',
   },
-  myLocationMarkerNav: {
-    width: 28, height: 28, borderRadius: 14,
-    backgroundColor: 'rgba(6,182,212,0.4)',
-    borderWidth: 3,
-  },
-  myLocationDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.primary },
+  myLocationDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#5b21b6' },
+
   destinationMarker: {
     width: 36, height: 36, borderRadius: 18,
     backgroundColor: '#a78bfa',
@@ -1189,6 +1444,27 @@ const styles = StyleSheet.create({
     borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5,
   },
   riskyRouteBannerText: { fontSize: 11, color: '#f97316', flex: 1 },
+  safeAltBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#16a34a',
+    borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4,
+  },
+  safeAltBtnText: { fontSize: 10, color: '#fff', fontWeight: '700' },
+  safeNearbyBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(124,58,237,0.10)',
+    borderWidth: 1, borderColor: 'rgba(124,58,237,0.25)',
+    borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6,
+    marginTop: 4,
+  },
+  safeNearbyTitle: { fontSize: 11, color: '#7c3aed', fontWeight: '700' },
+  safeNearbySubtitle: { fontSize: 10, color: Colors.textSecondary, marginTop: 1 },
+  safeNearbyMarker: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#7c3aed',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2.5, borderColor: '#fff',
+  },
   waypointRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   waypointBtnGroup: {
     flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8,

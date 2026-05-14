@@ -30,9 +30,7 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env
-.env*.local
+# local env files are tracked intentionally
 
 # typescript
 *.tsbuildinfo
