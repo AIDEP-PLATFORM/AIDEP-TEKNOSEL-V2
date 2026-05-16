@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   TextInput, Alert, Image, FlatList, Modal,
@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { Colors, FontSize, Spacing, BorderRadius } from '@/constants/theme';
@@ -64,6 +65,29 @@ export default function ReportScreen() {
   const [loading, setLoading] = useState(false);
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [selectedReport, setSelectedReport] = useState<ReportItem | null>(null);
+
+  const storageKey = `damage_reports_${currentUser?.id ?? 'guest'}`;
+
+  // Uygulama açılınca önceki raporları yükle
+  useEffect(() => {
+    AsyncStorage.getItem(storageKey).then((raw) => {
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw).map((r: ReportItem & { sentAt: string }) => ({
+            ...r,
+            sentAt: new Date(r.sentAt),
+          }));
+          setReports(parsed);
+        } catch {}
+      }
+    });
+  }, [storageKey]);
+
+  // Raporlar değişince kaydet (analiz edilenler hariç)
+  useEffect(() => {
+    const toSave = reports.filter((r) => r.status !== 'analyzing');
+    AsyncStorage.setItem(storageKey, JSON.stringify(toSave));
+  }, [reports, storageKey]);
   const lastHandledCamera = useRef<string | null>(null);
 
   // Konum seçici
